@@ -1,0 +1,29 @@
+from aiogram.fsm.state import State, StatesGroup
+
+
+class CalcForm(StatesGroup):
+    gender = State()
+    height = State()
+    weight = State()
+    age = State()
+    activity = State()
+    target = State()
+    goal_weight = State()
+    restrictions = State()
+    restrictions_detail = State()
+    food_prefs = State()
+    food_prefs_custom = State()
+    soup_pref = State()
+    menu_confirm = State()
+
+
+class DailyForm(StatesGroup):
+    food_log = State()
+
+
+class WeightForm(StatesGroup):
+    weight = State()
+
+
+class ReviewForm(StatesGroup):
+    text = State()
