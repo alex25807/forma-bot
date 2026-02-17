@@ -1,6 +1,5 @@
-fastapi
-uvicorn[standard]
 aiogram>=3.0,<4.0
+aiohttp
 pydantic-settings
 python-dotenv
 httpx
