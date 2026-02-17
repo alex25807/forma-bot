@@ -8,12 +8,13 @@ from aiogram.types import Message
 
 from app.config import settings
 from app.services.database import (
-    add_to_whitelist,
-    is_whitelisted,
-    add_subscriber,
-    is_subscribed,
-    get_all_reviews,
-    get_review_count,
+    a_add_to_whitelist as add_to_whitelist,
+    a_is_whitelisted as is_whitelisted,
+    a_add_subscriber as add_subscriber,
+    a_is_subscribed as is_subscribed,
+    a_get_all_reviews as get_all_reviews,
+    a_get_review_count as get_review_count,
+    _conn,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,9 +66,9 @@ async def add_vip(m: Message):
         return
 
     note = parts[2] if len(parts) > 2 else ""
-    add_to_whitelist(vip_id, added_by=str(m.from_user.id), note=note)
+    await add_to_whitelist(vip_id, str(m.from_user.id), note)
 
-    status = "✅ уже был" if is_whitelisted(vip_id) else "✅"
+    status = "✅ уже был" if await is_whitelisted(vip_id) else "✅"
     await m.answer(
         f"✅ Пользователь <code>{vip_id}</code> добавлен в VIP-список\n"
         f"{f'Заметка: {note}' if note else ''}",
@@ -91,7 +92,7 @@ async def add_vip_reply(m: Message):
         vip_id = reply.from_user.id
         name = reply.from_user.first_name or ""
 
-    add_to_whitelist(vip_id, added_by=str(m.from_user.id), note=name)
+    await add_to_whitelist(vip_id, str(m.from_user.id), name)
     await m.answer(
         f"✅ {name} (<code>{vip_id}</code>) добавлен в VIP-список",
         parse_mode="HTML",
@@ -106,11 +107,14 @@ async def vip_list(m: Message):
         await m.answer("⛔ Эта команда доступна только администратору.")
         return
 
-    from app.services.database import _conn
-    conn = _conn()
-    conn.row_factory = __import__("sqlite3").Row
-    rows = conn.execute("SELECT * FROM whitelist ORDER BY added_at DESC").fetchall()
-    conn.close()
+    import asyncio, sqlite3
+    def _fetch_vips():
+        conn = _conn()
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM whitelist ORDER BY added_at DESC").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    rows = await asyncio.to_thread(_fetch_vips)
 
     if not rows:
         await m.answer("VIP-список пуст.")
@@ -118,7 +122,6 @@ async def vip_list(m: Message):
 
     lines = ["📋 <b>VIP-список:</b>\n"]
     for r in rows:
-        r = dict(r)
         note = f" — {r['note']}" if r.get("note") else ""
         lines.append(f"  • <code>{r['user_id']}</code>{note}  ({r['added_at'][:10]})")
 
@@ -144,10 +147,12 @@ async def remove_vip(m: Message):
         await m.answer("❌ Неверный ID.")
         return
 
-    from app.services.database import _conn
-    conn = _conn()
-    conn.execute("DELETE FROM whitelist WHERE user_id = ?", (vip_id,))
-    conn.close()
+    import asyncio
+    def _del_vip():
+        conn = _conn()
+        conn.execute("DELETE FROM whitelist WHERE user_id = ?", (vip_id,))
+        conn.close()
+    await asyncio.to_thread(_del_vip)
 
     await m.answer(f"🗑 Пользователь <code>{vip_id}</code> удалён из VIP-списка.", parse_mode="HTML")
 
@@ -161,14 +166,14 @@ async def redeem_vip_code(m: Message):
 
     uid = m.from_user.id
 
-    if is_whitelisted(uid):
+    if await is_whitelisted(uid):
         await m.answer("Вы уже в VIP-списке ✅")
         return
 
-    add_to_whitelist(uid, added_by="invite_code", note=m.from_user.first_name or "")
+    await add_to_whitelist(uid, "invite_code", m.from_user.first_name or "")
 
-    if not is_subscribed(uid):
-        add_subscriber(uid, m.from_user.username, m.from_user.first_name)
+    if not await is_subscribed(uid):
+        await add_subscriber(uid, m.from_user.username, m.from_user.first_name)
 
     await m.answer(
         "🎉 <b>Добро пожаловать в VIP!</b>\n\n"
@@ -191,8 +196,8 @@ async def show_reviews(m: Message):
         await m.answer("⛔ Эта команда доступна только администратору.")
         return
 
-    total = get_review_count()
-    reviews = get_all_reviews(limit=20)
+    total = await get_review_count()
+    reviews = await get_all_reviews(20)
 
     if not reviews:
         await m.answer("Отзывов пока нет.")

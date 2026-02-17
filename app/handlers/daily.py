@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 from datetime import date, datetime
@@ -17,23 +18,23 @@ from app.states import DailyForm, WeightForm, ReviewForm
 from app import texts
 from app.services.llm import chat_completion
 from app.services.database import (
-    is_subscribed,
-    is_whitelisted,
-    get_profile,
-    save_morning_state,
-    save_evening_result,
-    save_food_log,
-    save_review,
-    log_weight,
-    get_weight_history,
-    get_full_weight_history,
-    get_full_daily_history,
-    get_daily_count,
-    get_daily_streak,
-    get_menu_count,
-    get_start_date,
-    has_premium_access,
-    days_since_last_menu,
+    a_is_subscribed as is_subscribed,
+    a_is_whitelisted as is_whitelisted,
+    a_get_profile as get_profile,
+    a_save_morning_state as save_morning_state,
+    a_save_evening_result as save_evening_result,
+    a_save_food_log as save_food_log,
+    a_save_review as save_review,
+    a_log_weight as log_weight,
+    a_get_weight_history as get_weight_history,
+    a_get_full_weight_history as get_full_weight_history,
+    a_get_full_daily_history as get_full_daily_history,
+    a_get_daily_count as get_daily_count,
+    a_get_daily_streak as get_daily_streak,
+    a_get_menu_count as get_menu_count,
+    a_get_start_date as get_start_date,
+    a_has_premium_access as has_premium_access,
+    a_days_since_last_menu as days_since_last_menu,
 )
 from app.services.charts import generate_weight_chart
 from app.services.export import generate_history_xlsx
@@ -48,14 +49,14 @@ TARGET_LABEL = {"cut": "снижение", "maintain": "поддержание",
 MENU_PERIOD = 3
 
 
-def _kb(user_id: int):
-    sub = is_subscribed(user_id)
-    profile = get_profile(user_id)
+async def _kb(user_id: int):
+    sub = await is_subscribed(user_id)
+    profile = await get_profile(user_id)
     has_profile = profile is not None
-    days = days_since_last_menu(user_id)
+    days = await days_since_last_menu(user_id)
     can_renew = (
         has_profile
-        and (sub or is_whitelisted(user_id))
+        and (sub or await is_whitelisted(user_id))
         and days is not None
         and days >= MENU_PERIOD
     )
@@ -73,7 +74,7 @@ async def back_to_menu(cb: CallbackQuery, state: FSMContext):
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
         "Выберите действие 👇",
         parse_mode="HTML",
-        reply_markup=_kb(cb.from_user.id),
+        reply_markup=await _kb(cb.from_user.id),
     )
     await cb.answer()
 
@@ -92,9 +93,9 @@ async def morning(cb: CallbackQuery):
 @router.callback_query(F.data.startswith("morning:"))
 async def morning_state(cb: CallbackQuery):
     key = cb.data.split(":")[1]
-    save_morning_state(cb.from_user.id, key)
+    await save_morning_state(cb.from_user.id, key)
     reply = texts.MORNING_REPLY.get(key, "Принято.")
-    await cb.message.edit_text(reply, reply_markup=_kb(cb.from_user.id))
+    await cb.message.edit_text(reply, reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
 
 
@@ -111,8 +112,8 @@ async def evening(cb: CallbackQuery):
 
 @router.callback_query(F.data == "evening:ok")
 async def evening_ok(cb: CallbackQuery):
-    save_evening_result(cb.from_user.id, "ok")
-    await cb.message.edit_text(texts.EVENING_OK, reply_markup=_kb(cb.from_user.id))
+    await save_evening_result(cb.from_user.id, "ok")
+    await cb.message.edit_text(texts.EVENING_OK, reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
 
 
@@ -128,12 +129,12 @@ async def evening_deviation(cb: CallbackQuery):
 @router.callback_query(F.data.startswith("reason:"))
 async def deviation_reason(cb: CallbackQuery):
     key = cb.data.split(":")[1]
-    save_evening_result(cb.from_user.id, "deviation", deviation_reason=key)
+    await save_evening_result(cb.from_user.id, "deviation", key)
     reply = texts.REASON_REPLY.get(key, "Принято.")
     await cb.message.edit_text(
         f"{reply}\n\n{texts.POST_SLIP_CLOSE}",
         parse_mode="HTML",
-        reply_markup=_kb(cb.from_user.id),
+        reply_markup=await _kb(cb.from_user.id),
     )
     await cb.answer()
 
@@ -158,7 +159,7 @@ async def process_food_log(m: Message, state: FSMContext):
         user=m.text,
     )
 
-    save_food_log(m.from_user.id, m.text, review)
+    await save_food_log(m.from_user.id, m.text, review)
 
     await wait_msg.delete()
     await m.answer(review, parse_mode="HTML")
@@ -168,7 +169,7 @@ async def process_food_log(m: Message, state: FSMContext):
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
         "Выберите действие 👇",
         parse_mode="HTML",
-        reply_markup=_kb(m.from_user.id),
+        reply_markup=await _kb(m.from_user.id),
     )
 
 
@@ -186,24 +187,24 @@ def _days_since(start_str: str | None) -> int | None:
 
 @router.callback_query(F.data == "main:progress")
 async def show_progress(cb: CallbackQuery):
-    profile = get_profile(cb.from_user.id)
+    profile = await get_profile(cb.from_user.id)
     if not profile:
         await cb.message.edit_text(
             "Сначала рассчитайте ориентир 📊",
-            reply_markup=_kb(cb.from_user.id),
+            reply_markup=await _kb(cb.from_user.id),
         )
         await cb.answer()
         return
 
-    weights = get_weight_history(cb.from_user.id, limit=10)
-    daily_count = get_daily_count(cb.from_user.id)
-    streak = get_daily_streak(cb.from_user.id)
-    menu_count = get_menu_count(cb.from_user.id)
+    weights = await get_weight_history(cb.from_user.id, 10)
+    daily_count = await get_daily_count(cb.from_user.id)
+    streak = await get_daily_streak(cb.from_user.id)
+    menu_count = await get_menu_count(cb.from_user.id)
 
     target_label = TARGET_LABEL.get(profile["target"], profile["target"])
-    start = get_start_date(cb.from_user.id)
+    start = await get_start_date(cb.from_user.id)
     days = _days_since(start)
-    premium = has_premium_access(cb.from_user.id)
+    premium = await has_premium_access(cb.from_user.id)
 
     goal_w = profile.get("goal_weight")
 
@@ -267,8 +268,8 @@ async def show_progress(cb: CallbackQuery):
 
 @router.callback_query(F.data == "prog:chart")
 async def send_chart(cb: CallbackQuery):
-    profile = get_profile(cb.from_user.id)
-    weights = get_full_weight_history(cb.from_user.id)
+    profile = await get_profile(cb.from_user.id)
+    weights = await get_full_weight_history(cb.from_user.id)
 
     if not weights:
         await cb.answer("Нет данных о весе. Сначала обновите вес ⚖️", show_alert=True)
@@ -283,9 +284,9 @@ async def send_chart(cb: CallbackQuery):
         elif profile.get("target") == "gain":
             target_w = profile["weight_kg"] * 1.1
 
-    start = get_start_date(cb.from_user.id)
+    start = await get_start_date(cb.from_user.id)
 
-    chart_bytes = generate_weight_chart(weights, target_weight=target_w, start_date_str=start)
+    chart_bytes = await asyncio.to_thread(generate_weight_chart, weights, target_w, start)
     if not chart_bytes:
         await cb.answer("Недостаточно данных для графика.", show_alert=True)
         return
@@ -301,12 +302,12 @@ async def send_chart(cb: CallbackQuery):
 
 @router.callback_query(F.data == "prog:save_chart")
 async def save_chart_file(cb: CallbackQuery):
-    if not can_export(cb.from_user.id):
+    if not await can_export(cb.from_user.id):
         await cb.answer("Эта функция доступна по подписке ✨", show_alert=True)
         return
 
-    profile = get_profile(cb.from_user.id)
-    weights = get_full_weight_history(cb.from_user.id)
+    profile = await get_profile(cb.from_user.id)
+    weights = await get_full_weight_history(cb.from_user.id)
 
     if not weights:
         await cb.answer("Нет данных о весе.", show_alert=True)
@@ -321,8 +322,8 @@ async def save_chart_file(cb: CallbackQuery):
         elif profile.get("target") == "gain":
             target_w = profile["weight_kg"] * 1.1
 
-    start = get_start_date(cb.from_user.id)
-    chart_bytes = generate_weight_chart(weights, target_weight=target_w, start_date_str=start)
+    start = await get_start_date(cb.from_user.id)
+    chart_bytes = await asyncio.to_thread(generate_weight_chart, weights, target_w, start)
     if not chart_bytes:
         await cb.answer("Недостаточно данных.", show_alert=True)
         return
@@ -336,15 +337,15 @@ async def save_chart_file(cb: CallbackQuery):
 
 @router.callback_query(F.data == "prog:export")
 async def export_history(cb: CallbackQuery):
-    if not can_export(cb.from_user.id):
+    if not await can_export(cb.from_user.id):
         await cb.answer("Эта функция доступна по подписке ✨", show_alert=True)
         return
 
-    daily = get_full_daily_history(cb.from_user.id)
-    weights = get_full_weight_history(cb.from_user.id)
-    profile = get_profile(cb.from_user.id)
+    daily = await get_full_daily_history(cb.from_user.id)
+    weights = await get_full_weight_history(cb.from_user.id)
+    profile = await get_profile(cb.from_user.id)
 
-    xlsx_bytes = generate_history_xlsx(
+    xlsx_bytes = await asyncio.to_thread(generate_history_xlsx,
         daily_history=daily,
         weight_history=weights,
         profile=profile,
@@ -392,9 +393,9 @@ async def save_new_weight(m: Message, state: FSMContext):
         return
 
     await state.clear()
-    log_weight(m.from_user.id, weight)
+    await log_weight(m.from_user.id, weight)
 
-    profile = get_profile(m.from_user.id)
+    profile = await get_profile(m.from_user.id)
     if profile:
         diff = weight - profile["weight_kg"]
         sign = "+" if diff > 0 else ""
@@ -406,7 +407,7 @@ async def save_new_weight(m: Message, state: FSMContext):
     else:
         text = f"⚖️ Вес записан: <b>{weight}</b> кг"
 
-    await m.answer(text, parse_mode="HTML", reply_markup=_kb(m.from_user.id))
+    await m.answer(text, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
 
 
 # ── Отзыв ────────────────────────────────────────────────────────
@@ -433,16 +434,16 @@ async def save_user_review(m: Message, state: FSMContext):
         await m.answer("Отзыв не может быть пустым. Попробуйте ещё раз.")
         return
 
-    save_review(
-        user_id=m.from_user.id,
-        username=m.from_user.username,
-        first_name=m.from_user.first_name,
-        text=review_text,
+    await save_review(
+        m.from_user.id,
+        m.from_user.username,
+        m.from_user.first_name,
+        review_text,
     )
 
     await m.answer(
         "🙏 <b>Спасибо за отзыв!</b>\n\n"
         "Ваше мнение очень ценно для нас.",
         parse_mode="HTML",
-        reply_markup=_kb(m.from_user.id),
+        reply_markup=await _kb(m.from_user.id),
     )

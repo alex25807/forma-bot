@@ -1,7 +1,9 @@
+import asyncio
 import json
 import sqlite3
 import logging
 from datetime import datetime, date
+from functools import partial
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -11,7 +13,10 @@ DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "forma.db"
 
 def _conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(DB_PATH, isolation_level=None)
+    conn = sqlite3.connect(DB_PATH, isolation_level=None, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
 
 
 def init_db():
@@ -475,3 +480,92 @@ def get_review_count() -> int:
 # ── Init on import ────────────────────────────────────────────────
 
 init_db()
+
+
+# ── Async wrappers (prevent blocking the event loop) ─────────────
+
+async def arun(fn, *args, **kwargs):
+    """Run a sync DB function in a thread so it won't block the bot."""
+    return await asyncio.to_thread(partial(fn, *args, **kwargs))
+
+
+async def a_add_subscriber(user_id, username, first_name):
+    return await arun(add_subscriber, user_id, username, first_name)
+
+async def a_is_subscribed(user_id):
+    return await arun(is_subscribed, user_id)
+
+async def a_subscriber_count():
+    return await arun(subscriber_count)
+
+async def a_save_profile(**kwargs):
+    return await arun(save_profile, **kwargs)
+
+async def a_get_profile(user_id):
+    return await arun(get_profile, user_id)
+
+async def a_log_weight(user_id, weight_kg):
+    return await arun(log_weight, user_id, weight_kg)
+
+async def a_get_weight_history(user_id, limit=30):
+    return await arun(get_weight_history, user_id, limit)
+
+async def a_save_morning_state(user_id, state):
+    return await arun(save_morning_state, user_id, state)
+
+async def a_save_evening_result(user_id, result, deviation_reason=None):
+    return await arun(save_evening_result, user_id, result, deviation_reason)
+
+async def a_save_food_log(user_id, food_text, gpt_review):
+    return await arun(save_food_log, user_id, food_text, gpt_review)
+
+async def a_get_daily_streak(user_id):
+    return await arun(get_daily_streak, user_id)
+
+async def a_get_daily_count(user_id):
+    return await arun(get_daily_count, user_id)
+
+async def a_save_menu(user_id, calories, protein_g, fat_g, carbs_g, menu_text):
+    return await arun(save_menu, user_id, calories, protein_g, fat_g, carbs_g, menu_text)
+
+async def a_get_menu_count(user_id):
+    return await arun(get_menu_count, user_id)
+
+async def a_get_last_menu(user_id):
+    return await arun(get_last_menu, user_id)
+
+async def a_days_since_last_menu(user_id):
+    return await arun(days_since_last_menu, user_id)
+
+async def a_set_subscription(user_id, plan, expires_at=None):
+    return await arun(set_subscription, user_id, plan, expires_at)
+
+async def a_get_subscription(user_id):
+    return await arun(get_subscription, user_id)
+
+async def a_add_to_whitelist(user_id, added_by="owner", note=""):
+    return await arun(add_to_whitelist, user_id, added_by, note)
+
+async def a_is_whitelisted(user_id):
+    return await arun(is_whitelisted, user_id)
+
+async def a_has_premium_access(user_id):
+    return await arun(has_premium_access, user_id)
+
+async def a_get_full_daily_history(user_id):
+    return await arun(get_full_daily_history, user_id)
+
+async def a_get_full_weight_history(user_id):
+    return await arun(get_full_weight_history, user_id)
+
+async def a_get_start_date(user_id):
+    return await arun(get_start_date, user_id)
+
+async def a_save_review(user_id, username, first_name, text):
+    return await arun(save_review, user_id, username, first_name, text)
+
+async def a_get_all_reviews(limit=50):
+    return await arun(get_all_reviews, limit)
+
+async def a_get_review_count():
+    return await arun(get_review_count)

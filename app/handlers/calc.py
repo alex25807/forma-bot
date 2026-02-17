@@ -23,8 +23,13 @@ from app.keyboards import (
 from app.services.nutrition import compute_kbju
 from app.services.llm import chat_completion
 from app.services.database import (
-    is_subscribed, get_profile, save_profile, save_menu,
-    is_whitelisted, get_menu_count, days_since_last_menu,
+    a_is_subscribed as is_subscribed,
+    a_get_profile as get_profile,
+    a_is_whitelisted as is_whitelisted,
+    a_get_menu_count as get_menu_count,
+    a_days_since_last_menu as days_since_last_menu,
+    a_save_profile as save_profile,
+    a_save_menu as save_menu,
 )
 from app.prompts import MENU_SYSTEM_SOUP, MENU_SYSTEM_NO_SOUP
 
@@ -35,14 +40,14 @@ router = Router()
 MENU_PERIOD = 3
 
 
-def _kb(user_id: int):
-    sub = is_subscribed(user_id)
-    profile = get_profile(user_id)
+async def _kb(user_id: int):
+    sub = await is_subscribed(user_id)
+    profile = await get_profile(user_id)
     has_profile = profile is not None
-    days = days_since_last_menu(user_id)
+    days = await days_since_last_menu(user_id)
     can_renew = (
         has_profile
-        and (sub or is_whitelisted(user_id))
+        and (sub or await is_whitelisted(user_id))
         and days is not None
         and days >= MENU_PERIOD
     )
@@ -99,7 +104,7 @@ async def cancel(cb: CallbackQuery, state: FSMContext):
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
         "Выберите действие 👇",
         parse_mode="HTML",
-        reply_markup=_kb(cb.from_user.id),
+        reply_markup=await _kb(cb.from_user.id),
     )
     await cb.answer()
 
@@ -477,7 +482,7 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
 
     await state.update_data(kbju=result.__dict__)
 
-    save_profile(
+    await save_profile(
         user_id=cb.from_user.id,
         gender=data["gender"],
         height_cm=data["height"],
@@ -585,18 +590,18 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
 
     menu_text = await chat_completion(system=system_prompt, user=user_prompt)
 
-    save_menu(
-        user_id=cb.from_user.id,
-        calories=kbju["calories"],
-        protein_g=kbju["protein_g"],
-        fat_g=kbju["fat_g"],
-        carbs_g=kbju["carbs_g"],
-        menu_text=menu_text,
+    await save_menu(
+        cb.from_user.id,
+        kbju["calories"],
+        kbju["protein_g"],
+        kbju["fat_g"],
+        kbju["carbs_g"],
+        menu_text,
     )
 
     await wait_msg.delete()
 
-    kb = _kb(cb.from_user.id)
+    kb = await _kb(cb.from_user.id)
     if len(menu_text) <= 4096:
         await cb.message.answer(menu_text, reply_markup=kb)
     else:
@@ -612,7 +617,7 @@ async def skip_menu(cb: CallbackQuery, state: FSMContext):
     await cb.message.edit_reply_markup(reply_markup=None)
     await cb.message.answer(
         "Хорошо! Если что — я здесь 👇",
-        reply_markup=_kb(cb.from_user.id),
+        reply_markup=await _kb(cb.from_user.id),
     )
     await cb.answer()
 
@@ -622,13 +627,13 @@ async def skip_menu(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "main:renew_menu")
 async def renew_menu(cb: CallbackQuery):
     uid = cb.from_user.id
-    profile = get_profile(uid)
+    profile = await get_profile(uid)
 
     if not profile:
         await cb.answer("Сначала рассчитайте ориентир 📊", show_alert=True)
         return
 
-    if not (is_subscribed(uid) or is_whitelisted(uid)):
+    if not (await is_subscribed(uid) or await is_whitelisted(uid)):
         await cb.answer(
             "Обновление меню доступно подписчикам.\n"
             "Нажмите «✨ Подписаться» в главном меню.",
@@ -636,7 +641,7 @@ async def renew_menu(cb: CallbackQuery):
         )
         return
 
-    days = days_since_last_menu(uid)
+    days = await days_since_last_menu(uid)
     if days is not None and days < MENU_PERIOD:
         left = MENU_PERIOD - days
         word = "день" if left == 1 else ("дня" if left in (2, 3, 4) else "дней")
@@ -673,18 +678,18 @@ async def renew_menu(cb: CallbackQuery):
 
     menu_text = await chat_completion(system=system_prompt, user=user_prompt)
 
-    save_menu(
-        user_id=uid,
-        calories=profile["calories"],
-        protein_g=profile["protein_g"],
-        fat_g=profile["fat_g"],
-        carbs_g=profile["carbs_g"],
-        menu_text=menu_text,
+    await save_menu(
+        uid,
+        profile["calories"],
+        profile["protein_g"],
+        profile["fat_g"],
+        profile["carbs_g"],
+        menu_text,
     )
 
     await wait_msg.delete()
 
-    total = get_menu_count(uid)
+    total = await get_menu_count(uid)
     header = (
         "🔄 <b>Новое меню готово!</b>\n"
         f"📋 Всего меню составлено: {total}\n"
@@ -692,7 +697,7 @@ async def renew_menu(cb: CallbackQuery):
     )
 
     full_text = header + menu_text
-    kb = _kb(uid)
+    kb = await _kb(uid)
 
     if len(full_text) <= 4096:
         await cb.message.answer(full_text, parse_mode="HTML", reply_markup=kb)

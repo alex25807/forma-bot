@@ -4,9 +4,13 @@ from aiogram.types import Message, CallbackQuery
 
 from app.keyboards import kb_start
 from app.services.database import (
-    add_subscriber, is_subscribed, get_profile,
-    has_premium_access, is_whitelisted, get_menu_count,
-    days_since_last_menu,
+    a_add_subscriber as add_subscriber,
+    a_is_subscribed as is_subscribed,
+    a_get_profile as get_profile,
+    a_has_premium_access as has_premium_access,
+    a_is_whitelisted as is_whitelisted,
+    a_get_menu_count as get_menu_count,
+    a_days_since_last_menu as days_since_last_menu,
 )
 
 router = Router()
@@ -14,14 +18,14 @@ router = Router()
 MENU_PERIOD = 3
 
 
-def _kb(user_id: int):
-    sub = is_subscribed(user_id)
-    profile = get_profile(user_id)
+async def _kb(user_id: int):
+    sub = await is_subscribed(user_id)
+    profile = await get_profile(user_id)
     has_profile = profile is not None
-    days = days_since_last_menu(user_id)
+    days = await days_since_last_menu(user_id)
     can_renew = (
         has_profile
-        and (sub or is_whitelisted(user_id))
+        and (sub or await is_whitelisted(user_id))
         and days is not None
         and days >= MENU_PERIOD
     )
@@ -39,7 +43,7 @@ async def start(m: Message):
         "без крайностей и чувства вины.\n\n"
         "Выберите действие 👇"
     )
-    await m.answer(text, parse_mode="HTML", reply_markup=_kb(m.from_user.id))
+    await m.answer(text, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
 
 
 @router.callback_query(F.data == "main:info")
@@ -76,16 +80,16 @@ async def how_it_works(cb: CallbackQuery):
         "<i>Без жёстких диет · Без срывов\n"
         "Без чувства вины</i>"
     )
-    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=_kb(cb.from_user.id))
+    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
 
 
 @router.callback_query(F.data == "main:subscribe")
 async def subscribe(cb: CallbackQuery):
-    is_new = add_subscriber(
-        user_id=cb.from_user.id,
-        username=cb.from_user.username,
-        first_name=cb.from_user.first_name,
+    is_new = await add_subscriber(
+        cb.from_user.id,
+        cb.from_user.username,
+        cb.from_user.first_name,
     )
 
     if is_new:
@@ -108,9 +112,9 @@ async def subscribe(cb: CallbackQuery):
             "Выберите действие 👇"
         )
 
-    profile = get_profile(cb.from_user.id)
+    profile = await get_profile(cb.from_user.id)
     has_profile = profile is not None
-    days = days_since_last_menu(cb.from_user.id)
+    days = await days_since_last_menu(cb.from_user.id)
     can_renew = has_profile and days is not None and days >= MENU_PERIOD
     await cb.message.edit_text(
         text,
@@ -138,5 +142,5 @@ async def subscribed_info(cb: CallbackQuery):
         "<i>Для оформления напишите нам —\n"
         "подберём удобный вариант.</i>"
     )
-    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=_kb(cb.from_user.id))
+    await cb.message.edit_text(text, parse_mode="HTML", reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
