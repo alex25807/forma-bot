@@ -210,8 +210,8 @@ async def show_reviews(m: Message):
         user = f"@{r['username']}" if r.get("username") else f"id:{r['user_id']}"
         dt = r["created_at"][:10]
         text = r["text"]
-        if len(text) > 200:
-            text = text[:200] + "…"
+        if len(text) > 1000:
+            text = text[:1000] + "…"
         lines.append(
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 {name} ({user})\n"
