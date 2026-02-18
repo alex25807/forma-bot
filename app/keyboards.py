@@ -9,6 +9,7 @@ from aiogram.types import (
 
 def kb_start(subscribed: bool = False, has_profile: bool = False, can_renew: bool = False):
     rows = [
+        [InlineKeyboardButton(text="ℹ️ Как это работает", callback_data="main:info")],
         [InlineKeyboardButton(text="💬 Поддержка сегодня", callback_data="main:support")],
         [InlineKeyboardButton(text="📝 Разобрать день", callback_data="main:review")],
         [InlineKeyboardButton(text="📊 Рассчитать ориентир", callback_data="main:calc")],
@@ -20,10 +21,7 @@ def kb_start(subscribed: bool = False, has_profile: bool = False, can_renew: boo
             InlineKeyboardButton(text="📈 Мой прогресс", callback_data="main:progress"),
             InlineKeyboardButton(text="⚖️ Обновить вес", callback_data="main:weight"),
         ])
-    rows.append([
-        InlineKeyboardButton(text="ℹ️ Как это работает", callback_data="main:info"),
-        InlineKeyboardButton(text="✍️ Отзыв", callback_data="main:review_send"),
-    ])
+    rows.append([InlineKeyboardButton(text="✍️ Отзыв", callback_data="main:review_send")])
     if subscribed:
         rows.append([InlineKeyboardButton(text="✅ Вы подписаны", callback_data="main:subscribed_info")])
     else:
