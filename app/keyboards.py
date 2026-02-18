@@ -230,6 +230,15 @@ def kb_menu_confirm():
     ])
 
 
+def kb_after_menu(has_premium: bool = False):
+    """Keyboard shown right after menu generation."""
+    rows = []
+    if has_premium:
+        rows.append([InlineKeyboardButton(text="📥 Скачать меню", callback_data="menu:download")])
+    rows.append([InlineKeyboardButton(text="↩️ В главное меню", callback_data="back:menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def kb_cancel_inline():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✕ Отмена", callback_data="calc:cancel")],

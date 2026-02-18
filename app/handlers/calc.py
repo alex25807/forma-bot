@@ -5,6 +5,8 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from app.states import CalcForm
+from aiogram.types import BufferedInputFile
+
 from app.keyboards import (
     kb_gender,
     kb_activity,
@@ -16,6 +18,7 @@ from app.keyboards import (
     kb_food_prefs_done,
     kb_soup_pref,
     kb_menu_confirm,
+    kb_after_menu,
     kb_start,
     RESTRICTION_LABELS,
     FOOD_PREF_LABELS,
@@ -31,6 +34,8 @@ from app.services.database import (
     a_save_profile as save_profile,
     a_save_menu as save_menu,
     a_get_latest_weight as get_latest_weight,
+    a_get_last_menu as get_last_menu,
+    a_has_premium_access as has_premium_access,
 )
 from app.prompts import MENU_SYSTEM_SOUP, MENU_SYSTEM_NO_SOUP
 
@@ -602,7 +607,8 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
 
     await wait_msg.delete()
 
-    kb = await _kb(cb.from_user.id)
+    premium = await has_premium_access(cb.from_user.id)
+    kb = kb_after_menu(has_premium=premium)
     if len(menu_text) <= 4096:
         await cb.message.answer(menu_text, reply_markup=kb)
     else:
@@ -741,7 +747,8 @@ async def renew_menu(cb: CallbackQuery):
     )
 
     full_text = header + menu_text
-    kb = await _kb(uid)
+    premium = await has_premium_access(uid)
+    kb = kb_after_menu(has_premium=premium)
 
     if len(full_text) <= 4096:
         await cb.message.answer(full_text, parse_mode="HTML", reply_markup=kb)
@@ -751,3 +758,33 @@ async def renew_menu(cb: CallbackQuery):
             markup = kb if i == len(chunks) - 1 else None
             pm = "HTML" if i == 0 else None
             await cb.message.answer(chunk, parse_mode=pm, reply_markup=markup)
+
+
+# ── Скачать меню ─────────────────────────────────────────────────
+
+@router.callback_query(F.data == "menu:download")
+async def download_menu(cb: CallbackQuery):
+    uid = cb.from_user.id
+    premium = await has_premium_access(uid)
+    if not premium:
+        await cb.answer("📥 Скачивание доступно по подписке / VIP", show_alert=True)
+        return
+
+    last = await get_last_menu(uid)
+    if not last or not last.get("menu_text"):
+        await cb.answer("Меню не найдено. Сначала сгенерируйте.", show_alert=True)
+        return
+
+    menu_text = last["menu_text"]
+    header = (
+        f"FORMA — Меню на 3 дня\n"
+        f"Ориентир: {last['calories']} ккал "
+        f"(Б {last['protein_g']} / Ж {last['fat_g']} / У {last['carbs_g']})\n"
+        f"Дата: {last['created_at'][:10]}\n"
+        f"{'=' * 40}\n\n"
+    )
+
+    file_bytes = (header + menu_text).encode("utf-8")
+    doc = BufferedInputFile(file_bytes, filename=f"forma_menu_{last['created_at'][:10]}.txt")
+    await cb.message.answer_document(doc, caption="📥 Ваше меню FORMA")
+    await cb.answer()
