@@ -84,6 +84,8 @@ async def how_it_works(cb: CallbackQuery):
     await cb.answer()
 
 
+CONFETTI_EFFECT = "5046509860389126442"
+
 @router.callback_query(F.data == "main:subscribe")
 async def subscribe(cb: CallbackQuery):
     is_new = await add_subscriber(
@@ -92,35 +94,51 @@ async def subscribe(cb: CallbackQuery):
         cb.from_user.first_name,
     )
 
+    profile = await get_profile(cb.from_user.id)
+    has_profile = profile is not None
+    days = await days_since_last_menu(cb.from_user.id)
+    can_renew = has_profile and days is not None and days >= MENU_PERIOD
+    kb = kb_start(subscribed=True, has_profile=has_profile, can_renew=can_renew)
+
     if is_new:
-        text = (
-            "🎉🎊🎉🎊🎉🎊🎉🎊🎉🎊\n\n"
-            "🥳  <b>Поздравляю!</b>\n\n"
-            "✨ <b>Вы подписались на FORMA!</b>\n\n"
-            "🎉🎊🎉🎊🎉🎊🎉🎊🎉🎊\n\n"
-            "Спасибо за доверие.\n"
+        await cb.message.edit_text("✨ Оформляем подписку...")
+
+        try:
+            await cb.message.answer(
+                "🎉🎊🎉🎊🎉🎊🎉🎊🎉🎊\n\n"
+                "🥳  <b>Поздравляю!</b>\n\n"
+                "✨ <b>Вы подписались на FORMA!</b>\n\n"
+                "🎉🎊🎉🎊🎉🎊🎉🎊🎉🎊",
+                parse_mode="HTML",
+                message_effect_id=CONFETTI_EFFECT,
+            )
+        except Exception:
+            await cb.message.answer(
+                "🎉🎊🎉🎊🎉🎊🎉🎊🎉🎊\n\n"
+                "🥳  <b>Поздравляю!</b>\n\n"
+                "✨ <b>Вы подписались на FORMA!</b>\n\n"
+                "🎉🎊🎉🎊🎉🎊🎉🎊🎉🎊",
+                parse_mode="HTML",
+            )
+
+        await cb.message.answer(
+            "Спасибо за доверие! 🙌\n"
             "Пользуйтесь, пробуйте, оценивайте.\n\n"
             "Если FORMA окажется полезной —\n"
             "вы сможете оформить полный доступ\n"
             "и продолжить путь к своей цели 💪\n\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
-            "Выберите действие 👇"
+            "Выберите действие 👇",
+            parse_mode="HTML",
+            reply_markup=kb,
         )
     else:
-        text = (
+        await cb.message.edit_text(
             "Вы уже подписаны ✓\n\n"
-            "Выберите действие 👇"
+            "Выберите действие 👇",
+            reply_markup=kb,
         )
 
-    profile = await get_profile(cb.from_user.id)
-    has_profile = profile is not None
-    days = await days_since_last_menu(cb.from_user.id)
-    can_renew = has_profile and days is not None and days >= MENU_PERIOD
-    await cb.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=kb_start(subscribed=True, has_profile=has_profile, can_renew=can_renew),
-    )
     await cb.answer()
 
 
