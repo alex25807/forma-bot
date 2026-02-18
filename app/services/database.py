@@ -213,6 +213,17 @@ def log_weight(user_id: int, weight_kg: float):
     conn.close()
 
 
+def get_latest_weight(user_id: int) -> float | None:
+    """Return the most recent logged weight, or None."""
+    conn = _conn()
+    row = conn.execute(
+        "SELECT weight_kg FROM weight_log WHERE user_id = ? ORDER BY logged_at DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
 def get_weight_history(user_id: int, limit: int = 30) -> list[dict]:
     conn = _conn()
     conn.row_factory = sqlite3.Row
@@ -506,6 +517,9 @@ async def a_get_profile(user_id):
 
 async def a_log_weight(user_id, weight_kg):
     return await arun(log_weight, user_id, weight_kg)
+
+async def a_get_latest_weight(user_id):
+    return await arun(get_latest_weight, user_id)
 
 async def a_get_weight_history(user_id, limit=30):
     return await arun(get_weight_history, user_id, limit)

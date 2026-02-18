@@ -30,6 +30,7 @@ from app.services.database import (
     a_days_since_last_menu as days_since_last_menu,
     a_save_profile as save_profile,
     a_save_menu as save_menu,
+    a_get_latest_weight as get_latest_weight,
 )
 from app.prompts import MENU_SYSTEM_SOUP, MENU_SYSTEM_NO_SOUP
 
@@ -656,6 +657,44 @@ async def renew_menu(cb: CallbackQuery):
     wait_msg = await cb.message.answer("⏳ Составляю новое меню на 3 дня...")
     await cb.answer()
 
+    latest_weight = await get_latest_weight(uid)
+    current_weight = latest_weight if latest_weight else profile["weight_kg"]
+
+    if current_weight != profile["weight_kg"]:
+        result = compute_kbju(
+            height_cm=profile["height_cm"],
+            weight_kg=current_weight,
+            age=profile["age"],
+            gender=profile["gender"],
+            activity_level=profile["activity"],
+            target=profile["target"],
+        )
+        calories, protein_g, fat_g, carbs_g = (
+            result.calories, result.protein_g, result.fat_g, result.carbs_g,
+        )
+        await save_profile(
+            user_id=uid,
+            gender=profile["gender"],
+            height_cm=profile["height_cm"],
+            weight_kg=current_weight,
+            age=profile["age"],
+            activity=profile["activity"],
+            target=profile["target"],
+            restrictions=profile.get("restrictions", []),
+            soup_pref=profile.get("soup_pref", True),
+            calories=calories,
+            protein_g=protein_g,
+            fat_g=fat_g,
+            carbs_g=carbs_g,
+            goal_weight=profile.get("goal_weight"),
+            food_prefs=profile.get("food_prefs", []),
+        )
+    else:
+        calories = profile["calories"]
+        protein_g = profile["protein_g"]
+        fat_g = profile["fat_g"]
+        carbs_g = profile["carbs_g"]
+
     restrictions = profile.get("restrictions", [])
     restrictions_text = _format_selected_restrictions(restrictions) if restrictions else "нет"
     food_prefs = profile.get("food_prefs", [])
@@ -667,10 +706,10 @@ async def renew_menu(cb: CallbackQuery):
     )
 
     user_prompt = (
-        f"Дневной ориентир: {profile['calories']} ккал, "
-        f"Б {profile['protein_g']} г, Ж {profile['fat_g']} г, У {profile['carbs_g']} г.\n"
+        f"Дневной ориентир: {calories} ккал, "
+        f"Б {protein_g} г, Ж {fat_g} г, У {carbs_g} г.\n"
         f"Пол: {GENDER_LABEL[profile['gender']]}, "
-        f"возраст {profile['age']}, вес {profile['weight_kg']} кг.\n"
+        f"возраст {profile['age']}, вес {current_weight} кг.\n"
         f"Ограничения по здоровью: {restrictions_text}.\n"
         f"{prefs_text}\n"
         "ВАЖНО: составьте НОВОЕ меню, с другими блюдами. Разнообразие важно!"
@@ -678,20 +717,25 @@ async def renew_menu(cb: CallbackQuery):
 
     menu_text = await chat_completion(system=system_prompt, user=user_prompt)
 
-    await save_menu(
-        uid,
-        profile["calories"],
-        profile["protein_g"],
-        profile["fat_g"],
-        profile["carbs_g"],
-        menu_text,
-    )
+    await save_menu(uid, calories, protein_g, fat_g, carbs_g, menu_text)
 
     await wait_msg.delete()
 
     total = await get_menu_count(uid)
+
+    weight_note = ""
+    if latest_weight and latest_weight != profile["weight_kg"]:
+        diff = latest_weight - profile["weight_kg"]
+        sign = "+" if diff > 0 else ""
+        weight_note = (
+            f"⚖️ Вес обновлён: <b>{current_weight}</b> кг ({sign}{diff:.1f})\n"
+            f"🔥 Новый ориентир: <b>{calories}</b> ккал "
+            f"(Б {protein_g} / Ж {fat_g} / У {carbs_g})\n"
+        )
+
     header = (
         "🔄 <b>Новое меню готово!</b>\n"
+        f"{weight_note}"
         f"📋 Всего меню составлено: {total}\n"
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
     )
