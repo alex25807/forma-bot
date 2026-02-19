@@ -7,7 +7,12 @@ from aiogram.types import (
 
 # ── Главное меню ──────────────────────────────────────────────────
 
-def kb_start(subscribed: bool = False, has_profile: bool = False, can_renew: bool = False):
+def kb_start(
+    subscribed: bool = False,
+    has_profile: bool = False,
+    can_renew: bool = False,
+    plan: str = "free",
+):
     rows = [
         [InlineKeyboardButton(text="ℹ️ Как это работает", callback_data="main:info")],
         [InlineKeyboardButton(text="💬 Поддержка сегодня", callback_data="main:support")],
@@ -21,9 +26,14 @@ def kb_start(subscribed: bool = False, has_profile: bool = False, can_renew: boo
             InlineKeyboardButton(text="📈 Мой прогресс", callback_data="main:progress"),
             InlineKeyboardButton(text="⚖️ Обновить вес", callback_data="main:weight"),
         ])
+    if plan == "premium":
+        rows.append([InlineKeyboardButton(text="📷 Анализ фото еды", callback_data="main:photo")])
     rows.append([InlineKeyboardButton(text="✍️ Отзыв", callback_data="main:review_send")])
-    if subscribed:
-        rows.append([InlineKeyboardButton(text="✅ Вы подписаны", callback_data="main:subscribed_info")])
+    if plan in ("standard", "premium"):
+        label = "Стандарт" if plan == "standard" else "Премиум"
+        rows.append([InlineKeyboardButton(text=f"✅ {label}", callback_data="main:subscribed_info")])
+    elif subscribed:
+        rows.append([InlineKeyboardButton(text="💎 Тарифы", callback_data="pay:choose")])
     else:
         rows.append([InlineKeyboardButton(text="✨ Подписаться", callback_data="main:subscribe")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -241,7 +251,9 @@ def kb_menu_confirm():
 
 def kb_after_menu(has_premium: bool = False):
     """Keyboard shown right after menu generation."""
-    rows = []
+    rows = [
+        [InlineKeyboardButton(text="👨‍🍳 Получить рецепт", callback_data="menu:recipe")],
+    ]
     if has_premium:
         rows.append([InlineKeyboardButton(text="📥 Скачать меню", callback_data="menu:download")])
     rows.append([InlineKeyboardButton(text="↩️ В главное меню", callback_data="back:menu")])
@@ -273,6 +285,14 @@ def kb_progress(has_premium: bool = False):
         ])
     rows.append([InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def kb_payment_plans():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔹 Стандарт — 299 ₽/мес", callback_data="pay:plan:standard")],
+        [InlineKeyboardButton(text="🔸 Премиум — 499 ₽/мес", callback_data="pay:plan:premium")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back:menu")],
+    ])
 
 
 remove_kb = ReplyKeyboardRemove()

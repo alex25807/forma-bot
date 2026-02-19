@@ -27,3 +27,11 @@ class WeightForm(StatesGroup):
 
 class ReviewForm(StatesGroup):
     text = State()
+
+
+class RecipeForm(StatesGroup):
+    dish_name = State()
+
+
+class PhotoForm(StatesGroup):
+    waiting = State()

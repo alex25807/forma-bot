@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from app.states import CalcForm
+from app.states import CalcForm, RecipeForm
 from aiogram.types import BufferedInputFile
 
 from app.keyboards import (
@@ -35,9 +35,10 @@ from app.services.database import (
     a_save_menu as save_menu,
     a_get_latest_weight as get_latest_weight,
     a_get_last_menu as get_last_menu,
-    a_has_premium_access as has_premium_access,
+    a_has_standard_access as has_standard_access,
+    a_get_user_plan as get_user_plan,
 )
-from app.prompts import MENU_SYSTEM_SOUP, MENU_SYSTEM_NO_SOUP
+from app.prompts import MENU_SYSTEM_SOUP, MENU_SYSTEM_NO_SOUP, RECIPE_SYSTEM
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +51,15 @@ async def _kb(user_id: int):
     sub = await is_subscribed(user_id)
     profile = await get_profile(user_id)
     has_profile = profile is not None
+    plan = await get_user_plan(user_id)
     days = await days_since_last_menu(user_id)
     can_renew = (
         has_profile
-        and (sub or await is_whitelisted(user_id))
+        and (sub or plan != "free")
         and days is not None
         and days >= MENU_PERIOD
     )
-    return kb_start(sub, has_profile, can_renew)
+    return kb_start(sub, has_profile, can_renew, plan=plan)
 
 GENDER_LABEL = {"male": "мужской", "female": "женский"}
 ACTIVITY_LABEL = {
@@ -594,7 +596,10 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
         f"{prefs_text}"
     )
 
-    menu_text = await chat_completion(system=system_prompt, user=user_prompt)
+    menu_text = await chat_completion(
+        system=system_prompt, user=user_prompt,
+        user_id=cb.from_user.id, action="menu_generate",
+    )
 
     await save_menu(
         cb.from_user.id,
@@ -607,8 +612,8 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
 
     await wait_msg.delete()
 
-    premium = await has_premium_access(cb.from_user.id)
-    kb = kb_after_menu(has_premium=premium)
+    standard = await has_standard_access(cb.from_user.id)
+    kb = kb_after_menu(has_premium=standard)
     if len(menu_text) <= 4096:
         await cb.message.answer(menu_text, reply_markup=kb)
     else:
@@ -721,7 +726,10 @@ async def renew_menu(cb: CallbackQuery):
         "ВАЖНО: составьте НОВОЕ меню, с другими блюдами. Разнообразие важно!"
     )
 
-    menu_text = await chat_completion(system=system_prompt, user=user_prompt)
+    menu_text = await chat_completion(
+        system=system_prompt, user=user_prompt,
+        user_id=uid, action="menu_renew",
+    )
 
     await save_menu(uid, calories, protein_g, fat_g, carbs_g, menu_text)
 
@@ -747,8 +755,8 @@ async def renew_menu(cb: CallbackQuery):
     )
 
     full_text = header + menu_text
-    premium = await has_premium_access(uid)
-    kb = kb_after_menu(has_premium=premium)
+    standard = await has_standard_access(uid)
+    kb = kb_after_menu(has_premium=standard)
 
     if len(full_text) <= 4096:
         await cb.message.answer(full_text, parse_mode="HTML", reply_markup=kb)
@@ -765,8 +773,8 @@ async def renew_menu(cb: CallbackQuery):
 @router.callback_query(F.data == "menu:download")
 async def download_menu(cb: CallbackQuery):
     uid = cb.from_user.id
-    premium = await has_premium_access(uid)
-    if not premium:
+    standard = await has_standard_access(uid)
+    if not standard:
         await cb.answer("📥 Скачивание доступно по подписке / VIP", show_alert=True)
         return
 
@@ -788,3 +796,59 @@ async def download_menu(cb: CallbackQuery):
     doc = BufferedInputFile(file_bytes, filename=f"forma_menu_{last['created_at'][:10]}.txt")
     await cb.message.answer_document(doc, caption="📥 Ваше меню FORMA")
     await cb.answer()
+
+
+# ── Рецепт блюда ────────────────────────────────────────────────
+
+@router.callback_query(F.data == "menu:recipe")
+async def ask_recipe(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(RecipeForm.dish_name)
+    await cb.message.answer(
+        "👨‍🍳 <b>Рецепт блюда</b>\n\n"
+        "Напишите название блюда из меню,\n"
+        "и я дам подробный рецепт\n"
+        "с пошаговой инструкцией.\n\n"
+        "<i>Например: Борщ, Куриная грудка\n"
+        "с бурым рисом, Творожная запеканка</i>",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+
+@router.message(RecipeForm.dish_name)
+async def generate_recipe(m: Message, state: FSMContext):
+    dish = m.text.strip() if m.text else ""
+    if not dish:
+        await m.answer("Введите название блюда.")
+        return
+
+    await state.clear()
+    wait_msg = await m.answer("👨‍🍳 Готовлю рецепт...")
+
+    profile = await get_profile(m.from_user.id)
+    restrictions_hint = ""
+    if profile:
+        restrictions = profile.get("restrictions", [])
+        if restrictions:
+            from app.keyboards import RESTRICTION_LABELS
+            labels = [RESTRICTION_LABELS.get(r, r) for r in restrictions]
+            restrictions_hint = f"\nУ пользователя ограничения: {', '.join(labels)}. Учтите их в рецепте."
+
+    recipe = await chat_completion(
+        system=RECIPE_SYSTEM,
+        user=f"Рецепт блюда: {dish}{restrictions_hint}",
+        user_id=m.from_user.id, action="recipe",
+    )
+
+    await wait_msg.delete()
+
+    standard = await has_standard_access(m.from_user.id)
+    kb = kb_after_menu(has_premium=standard)
+
+    if len(recipe) <= 4096:
+        await m.answer(recipe, parse_mode="HTML", reply_markup=kb)
+    else:
+        chunks = [recipe[i : i + 4096] for i in range(0, len(recipe), 4096)]
+        for i, chunk in enumerate(chunks):
+            markup = kb if i == len(chunks) - 1 else None
+            await m.answer(chunk, parse_mode="HTML", reply_markup=markup)

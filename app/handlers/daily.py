@@ -16,7 +16,7 @@ from app.keyboards import (
 )
 from app.states import DailyForm, WeightForm, ReviewForm
 from app import texts
-from app.services.llm import chat_completion
+from app.services.llm import chat_completion, vision_completion
 from app.services.database import (
     a_is_subscribed as is_subscribed,
     a_is_whitelisted as is_whitelisted,
@@ -33,13 +33,15 @@ from app.services.database import (
     a_get_daily_streak as get_daily_streak,
     a_get_menu_count as get_menu_count,
     a_get_start_date as get_start_date,
-    a_has_premium_access as has_premium_access,
+    a_has_standard_access as has_standard_access,
+    a_get_user_plan as get_user_plan,
     a_days_since_last_menu as days_since_last_menu,
 )
 from app.services.charts import generate_weight_chart
 from app.services.export import generate_history_xlsx
 from app.services.access import can_export
-from app.prompts import DAILY_REVIEW_SYSTEM
+from app.services.database import a_has_premium_access as has_premium_access
+from app.prompts import DAILY_REVIEW_SYSTEM, PHOTO_ANALYSIS_SYSTEM
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +55,15 @@ async def _kb(user_id: int):
     sub = await is_subscribed(user_id)
     profile = await get_profile(user_id)
     has_profile = profile is not None
+    plan = await get_user_plan(user_id)
     days = await days_since_last_menu(user_id)
     can_renew = (
         has_profile
-        and (sub or await is_whitelisted(user_id))
+        and (sub or plan != "free")
         and days is not None
         and days >= MENU_PERIOD
     )
-    return kb_start(sub, has_profile, can_renew)
+    return kb_start(sub, has_profile, can_renew, plan=plan)
 
 
 # ── Возврат в меню ────────────────────────────────────────────────
@@ -157,6 +160,7 @@ async def process_food_log(m: Message, state: FSMContext):
     review = await chat_completion(
         system=DAILY_REVIEW_SYSTEM,
         user=m.text,
+        user_id=m.from_user.id, action="food_review",
     )
 
     await save_food_log(m.from_user.id, m.text, review)
@@ -204,7 +208,7 @@ async def show_progress(cb: CallbackQuery):
     target_label = TARGET_LABEL.get(profile["target"], profile["target"])
     start = await get_start_date(cb.from_user.id)
     days = _days_since(start)
-    premium = await has_premium_access(cb.from_user.id)
+    premium = await has_standard_access(cb.from_user.id)
 
     goal_w = profile.get("goal_weight")
 
@@ -447,3 +451,63 @@ async def save_user_review(m: Message, state: FSMContext):
         parse_mode="HTML",
         reply_markup=await _kb(m.from_user.id),
     )
+
+
+# ── Фото-анализ еды (Premium) ───────────────────────────────────
+
+@router.callback_query(F.data == "main:photo")
+async def ask_photo(cb: CallbackQuery, state: FSMContext):
+    uid = cb.from_user.id
+    if not await has_premium_access(uid):
+        await cb.answer(
+            "📷 Анализ фото доступен в тарифе «Премиум»",
+            show_alert=True,
+        )
+        return
+
+    from app.states import PhotoForm
+    await state.set_state(PhotoForm.waiting)
+    await cb.message.answer(
+        "📷 <b>Анализ фото еды</b>\n\n"
+        "Отправьте фото того, что вы едите\n"
+        "или планируете съесть.\n\n"
+        "AI оценит блюда и подсчитает\n"
+        "примерный КБЖУ.\n\n"
+        "<i>Поддерживаются фото блюд,\n"
+        "тарелок, продуктов</i>",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+
+from app.states import PhotoForm          # noqa: E402
+
+
+@router.message(PhotoForm.waiting, F.photo)
+async def analyze_photo(m: Message, state: FSMContext):
+    uid = m.from_user.id
+    await state.clear()
+    wait_msg = await m.answer("🔍 Анализирую фото...")
+
+    from app.bot import bot
+    photo = m.photo[-1]
+    file = await bot.get_file(photo.file_id)
+    bio = await bot.download_file(file.file_path)
+    image_bytes = bio.read()
+
+    caption = m.caption or ""
+    result = await vision_completion(
+        system=PHOTO_ANALYSIS_SYSTEM,
+        image_bytes=image_bytes,
+        user_text=caption,
+        user_id=uid,
+        action="photo_analysis",
+    )
+
+    await wait_msg.delete()
+    await m.answer(result, parse_mode="HTML", reply_markup=await _kb(uid))
+
+
+@router.message(PhotoForm.waiting)
+async def photo_wrong_type(m: Message):
+    await m.answer("Пожалуйста, отправьте именно фото (не файл и не текст).")

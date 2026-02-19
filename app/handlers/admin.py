@@ -17,6 +17,7 @@ from app.services.database import (
     a_get_all_reviews as get_all_reviews,
     a_get_review_count as get_review_count,
     a_delete_user_data as delete_user_data,
+    a_get_api_stats as get_api_stats,
     _conn,
 )
 
@@ -189,6 +190,47 @@ async def redeem_vip_code(m: Message):
         parse_mode="HTML",
     )
     logger.info("VIP code redeemed by user %s (%s)", uid, m.from_user.first_name)
+
+
+# ── /stats — финансовая статистика ─────────────────────────────
+
+@router.message(Command("stats"))
+async def show_stats(m: Message):
+    if not _is_admin(m.from_user.id):
+        await m.answer("⛔ Эта команда доступна только администратору.")
+        return
+
+    s = await get_api_stats()
+    plans = s.get("plans", {})
+    plans_text = "\n".join(
+        f"    {p}: {c}" for p, c in sorted(plans.items())
+    ) or "    нет данных"
+    text = (
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "  📊 <b>FORMA — Статистика</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "👥 <b>Пользователи</b>\n"
+        f"  Подписчиков: {s['subscribers']}\n"
+        f"  С профилем: {s['profiles']}\n"
+        f"  VIP: {s['vip']}\n"
+        f"  Согласий: {s['consents']}\n\n"
+        "💎 <b>Тарифы</b>\n"
+        f"{plans_text}\n\n"
+        "📋 <b>Контент</b>\n"
+        f"  Меню сгенерировано: {s['menus_total']}\n"
+        f"  Рецептов выдано: {s['recipes_total']}\n\n"
+        "🤖 <b>API за всё время</b>\n"
+        f"  Вызовов: {s['total_calls']}\n"
+        f"  Токенов: {s['total_tokens_in'] + s['total_tokens_out']:,}\n"
+        f"  Расход: ${s['total_cost']:.4f}\n\n"
+        "📅 <b>За текущий месяц</b>\n"
+        f"  Вызовов: {s['month_calls']}\n"
+        f"  Расход: ${s['month_cost']:.4f}\n\n"
+        "📆 <b>За сегодня</b>\n"
+        f"  Вызовов: {s['today_calls']}\n"
+        f"  Расход: ${s['today_cost']:.4f}\n"
+    )
+    await m.answer(text, parse_mode="HTML")
 
 
 # ── /reviews — админ просматривает отзывы ────────────────────────

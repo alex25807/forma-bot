@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     ADMIN_ID: int = 0
     VIP_CODE: str = "FORMA2026"
+    PAYMENT_PROVIDER_TOKEN: str = ""
+    STANDARD_PRICE: int = 29900
+    PREMIUM_PRICE: int = 49900
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

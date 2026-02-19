@@ -105,6 +105,17 @@ def init_db():
             accepted     INTEGER NOT NULL DEFAULT 0,
             accepted_at  TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS api_usage (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            action       TEXT NOT NULL,
+            model        TEXT,
+            tokens_in    INTEGER DEFAULT 0,
+            tokens_out   INTEGER DEFAULT 0,
+            cost_usd     REAL DEFAULT 0,
+            created_at   TEXT NOT NULL
+        );
     """)
     # Migrations
     for col, typ in [("goal_weight", "REAL"), ("food_prefs", "TEXT")]:
@@ -415,16 +426,33 @@ def is_whitelisted(user_id: int) -> bool:
     return row is not None
 
 
-def has_premium_access(user_id: int) -> bool:
-    """Check if user has paid subscription or is whitelisted."""
-    if is_whitelisted(user_id):
-        return True
-    sub = get_subscription(user_id)
+PLAN_LEVEL = {"free": 0, "standard": 1, "premium": 2}
+
+
+def _sub_active(sub: dict | None) -> bool:
     if not sub or sub["plan"] == "free":
         return False
     if sub["expires_at"]:
         return datetime.fromisoformat(sub["expires_at"]) > datetime.now()
     return True
+
+
+def get_user_plan(user_id: int) -> str:
+    """Return effective plan: 'free', 'standard', or 'premium'."""
+    if is_whitelisted(user_id):
+        return "standard"
+    sub = get_subscription(user_id)
+    if _sub_active(sub):
+        return sub["plan"]
+    return "free"
+
+
+def has_standard_access(user_id: int) -> bool:
+    return PLAN_LEVEL.get(get_user_plan(user_id), 0) >= 1
+
+
+def has_premium_access(user_id: int) -> bool:
+    return PLAN_LEVEL.get(get_user_plan(user_id), 0) >= 2
 
 
 # ── Full history for export ───────────────────────────────────────
@@ -494,6 +522,78 @@ def get_review_count() -> int:
     return count
 
 
+# ── API Usage tracking ───────────────────────────────────────────
+
+def log_api_usage(
+    user_id: int, action: str, model: str,
+    tokens_in: int, tokens_out: int, cost_usd: float,
+):
+    conn = _conn()
+    conn.execute(
+        """INSERT INTO api_usage
+           (user_id, action, model, tokens_in, tokens_out, cost_usd, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (user_id, action, model, tokens_in, tokens_out, cost_usd,
+         datetime.now().isoformat()),
+    )
+    conn.close()
+
+
+def get_api_stats() -> dict:
+    """Aggregate API usage stats for admin dashboard."""
+    conn = _conn()
+    row = conn.execute("""
+        SELECT
+            COUNT(*) as total_calls,
+            COALESCE(SUM(tokens_in), 0) as total_tokens_in,
+            COALESCE(SUM(tokens_out), 0) as total_tokens_out,
+            COALESCE(SUM(cost_usd), 0) as total_cost
+        FROM api_usage
+    """).fetchone()
+
+    month_row = conn.execute("""
+        SELECT
+            COUNT(*) as calls,
+            COALESCE(SUM(cost_usd), 0) as cost
+        FROM api_usage
+        WHERE created_at >= date('now', 'start of month')
+    """).fetchone()
+
+    today_row = conn.execute("""
+        SELECT
+            COUNT(*) as calls,
+            COALESCE(SUM(cost_usd), 0) as cost
+        FROM api_usage
+        WHERE created_at >= date('now')
+    """).fetchone()
+
+    users_row = conn.execute("SELECT COUNT(*) FROM subscribers").fetchone()
+    profiles_row = conn.execute("SELECT COUNT(*) FROM profiles").fetchone()
+    consent_row = conn.execute("SELECT COUNT(*) FROM consent WHERE accepted = 1").fetchone()
+    vip_row = conn.execute("SELECT COUNT(*) FROM whitelist").fetchone()
+    plans_rows = conn.execute(
+        "SELECT plan, COUNT(*) as cnt FROM subscriptions GROUP BY plan"
+    ).fetchall()
+    menus_row = conn.execute("SELECT COUNT(*) FROM menu_log").fetchone()
+    recipes_row = conn.execute(
+        "SELECT COUNT(*) FROM api_usage WHERE action = 'recipe'"
+    ).fetchone()
+
+    plans = {r[0]: r[1] for r in plans_rows}
+
+    conn.close()
+    return {
+        "total_calls": row[0], "total_tokens_in": row[1],
+        "total_tokens_out": row[2], "total_cost": row[3],
+        "month_calls": month_row[0], "month_cost": month_row[1],
+        "today_calls": today_row[0], "today_cost": today_row[1],
+        "subscribers": users_row[0], "profiles": profiles_row[0],
+        "consents": consent_row[0], "vip": vip_row[0],
+        "plans": plans, "menus_total": menus_row[0],
+        "recipes_total": recipes_row[0],
+    }
+
+
 # ── Consent ──────────────────────────────────────────────────────
 
 def has_consent(user_id: int) -> bool:
@@ -521,7 +621,8 @@ def delete_user_data(user_id: int):
     """Remove all personal data for a user (GDPR / 152-FZ right to erasure)."""
     conn = _conn()
     for table in ("profiles", "weight_log", "daily_log", "menu_log",
-                  "subscribers", "subscriptions", "whitelist", "reviews", "consent"):
+                  "subscribers", "subscriptions", "whitelist", "reviews",
+                  "consent", "api_usage"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     conn.close()
 
@@ -601,6 +702,12 @@ async def a_add_to_whitelist(user_id, added_by="owner", note=""):
 async def a_is_whitelisted(user_id):
     return await arun(is_whitelisted, user_id)
 
+async def a_get_user_plan(user_id):
+    return await arun(get_user_plan, user_id)
+
+async def a_has_standard_access(user_id):
+    return await arun(has_standard_access, user_id)
+
 async def a_has_premium_access(user_id):
     return await arun(has_premium_access, user_id)
 
@@ -630,3 +737,9 @@ async def a_save_consent(user_id):
 
 async def a_delete_user_data(user_id):
     return await arun(delete_user_data, user_id)
+
+async def a_log_api_usage(user_id, action, model, tokens_in, tokens_out, cost_usd):
+    return await arun(log_api_usage, user_id, action, model, tokens_in, tokens_out, cost_usd)
+
+async def a_get_api_stats():
+    return await arun(get_api_stats)

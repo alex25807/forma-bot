@@ -7,12 +7,12 @@ from app.services.database import (
     a_add_subscriber as add_subscriber,
     a_is_subscribed as is_subscribed,
     a_get_profile as get_profile,
-    a_has_premium_access as has_premium_access,
     a_is_whitelisted as is_whitelisted,
     a_get_menu_count as get_menu_count,
     a_days_since_last_menu as days_since_last_menu,
     a_has_consent as has_consent,
     a_save_consent as save_consent,
+    a_get_user_plan as get_user_plan,
 )
 
 router = Router()
@@ -24,14 +24,15 @@ async def _kb(user_id: int):
     sub = await is_subscribed(user_id)
     profile = await get_profile(user_id)
     has_profile = profile is not None
+    plan = await get_user_plan(user_id)
     days = await days_since_last_menu(user_id)
     can_renew = (
         has_profile
-        and (sub or await is_whitelisted(user_id))
+        and (sub or plan != "free")
         and days is not None
         and days >= MENU_PERIOD
     )
-    return kb_start(sub, has_profile, can_renew)
+    return kb_start(sub, has_profile, can_renew, plan=plan)
 
 
 WELCOME_TEXT = (
@@ -138,6 +139,8 @@ async def how_it_works(cb: CallbackQuery):
         "        по здоровью\n\n"
         "  📋  Составляем меню на 3 дня\n"
         "        с точными граммовками\n\n"
+        "  👨‍🍳  Рецепты блюд из меню\n"
+        "        пошаговые, с граммовками\n\n"
         "  💬  Поддерживаем каждый день:\n"
         "        утренний настрой + разбор вечером\n\n"
         "  ⚖️  Отслеживаем вес\n"
@@ -146,8 +149,18 @@ async def how_it_works(cb: CallbackQuery):
         "        серии чек-инов, отклонения, путь к цели\n\n"
         "  📊  Красочный график веса\n"
         "        наглядная динамика по дням\n\n"
-        "  📥  Экспорт истории в Excel\n"
-        "        для платной подписки / VIP\n\n"
+        "  📷  Анализ фото еды (Премиум)\n"
+        "        AI считает КБЖУ по фотографии\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "💎 <b>Тарифы</b>\n\n"
+        "  🆓 <b>Бесплатно</b> — одно меню,\n"
+        "        базовый функционал\n\n"
+        "  🔹 <b>Стандарт</b> (299 ₽/мес) —\n"
+        "        безлимит меню, рецепты,\n"
+        "        скачивание, экспорт Excel\n\n"
+        "  🔸 <b>Премиум</b> (499 ₽/мес) —\n"
+        "        всё из Стандарт + анализ\n"
+        "        фото еды через AI\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "💡 <b>Уровни активности</b>\n\n"
         "  🚶 <b>Лёгкая</b> — прогулки 2-3 р/нед,\n"
