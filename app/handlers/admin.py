@@ -6,6 +6,8 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 from app.config import settings
 from app.services.database import (
     a_add_to_whitelist as add_to_whitelist,
@@ -14,6 +16,7 @@ from app.services.database import (
     a_is_subscribed as is_subscribed,
     a_get_all_reviews as get_all_reviews,
     a_get_review_count as get_review_count,
+    a_delete_user_data as delete_user_data,
     _conn,
 )
 
@@ -226,3 +229,46 @@ async def show_reviews(m: Message):
             await m.answer(chunk, parse_mode="HTML")
     else:
         await m.answer(full, parse_mode="HTML")
+
+
+# ── /deletedata — удаление персональных данных (152-ФЗ) ──────────
+
+@router.message(Command("deletedata"))
+async def ask_delete_data(m: Message):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑 Да, удалить все данные", callback_data="data:confirm_delete")],
+        [InlineKeyboardButton(text="↩️ Отмена", callback_data="data:cancel_delete")],
+    ])
+    await m.answer(
+        "⚠️ <b>Удаление персональных данных</b>\n\n"
+        "Будут удалены:\n"
+        "  • Профиль (пол, рост, вес, возраст)\n"
+        "  • История веса\n"
+        "  • Дневник питания\n"
+        "  • Все сгенерированные меню\n"
+        "  • Подписка и VIP-статус\n"
+        "  • Отзывы\n"
+        "  • Согласие на обработку\n\n"
+        "<b>Это действие необратимо.</b>\n"
+        "Вы уверены?",
+        parse_mode="HTML",
+        reply_markup=kb,
+    )
+
+
+@router.callback_query(F.data == "data:confirm_delete")
+async def confirm_delete(cb: CallbackQuery):
+    await delete_user_data(cb.from_user.id)
+    await cb.message.edit_text(
+        "✅ Все ваши данные удалены.\n\n"
+        "Спасибо, что пользовались FORMA.\n"
+        "Если захотите вернуться — нажмите /start",
+    )
+    await cb.answer()
+    logger.info("User %s requested data deletion", cb.from_user.id)
+
+
+@router.callback_query(F.data == "data:cancel_delete")
+async def cancel_delete(cb: CallbackQuery):
+    await cb.message.edit_text("Удаление отменено. Ваши данные на месте ✓")
+    await cb.answer()

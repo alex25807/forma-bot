@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 
-from app.keyboards import kb_start
+from app.keyboards import kb_start, kb_consent
 from app.services.database import (
     a_add_subscriber as add_subscriber,
     a_is_subscribed as is_subscribed,
@@ -11,6 +11,8 @@ from app.services.database import (
     a_is_whitelisted as is_whitelisted,
     a_get_menu_count as get_menu_count,
     a_days_since_last_menu as days_since_last_menu,
+    a_has_consent as has_consent,
+    a_save_consent as save_consent,
 )
 
 router = Router()
@@ -32,18 +34,98 @@ async def _kb(user_id: int):
     return kb_start(sub, has_profile, can_renew)
 
 
+WELCOME_TEXT = (
+    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "       <b>F O R M A</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "Спокойный сервис по питанию.\n"
+    "Помогает изменить форму тела\n"
+    "без крайностей и чувства вины.\n\n"
+    "Выберите действие 👇"
+)
+
+CONSENT_TEXT = (
+    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "       <b>F O R M A</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "Добро пожаловать! 👋\n\n"
+    "Для работы сервиса нам понадобятся\n"
+    "некоторые ваши данные:\n"
+    "пол, возраст, рост, вес,\n"
+    "ограничения по здоровью.\n\n"
+    "Все данные хранятся конфиденциально\n"
+    "и используются <b>только</b> для\n"
+    "персонализации вашего питания.\n\n"
+    "Вы можете удалить свои данные\n"
+    "в любой момент командой /deletedata\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "<i>Нажмите «Принимаю», чтобы начать.</i>"
+)
+
+PRIVACY_POLICY = (
+    "📄 <b>Политика конфиденциальности FORMA</b>\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "<b>1. Какие данные мы собираем</b>\n"
+    "  • Telegram ID, имя пользователя\n"
+    "  • Пол, возраст, рост, вес\n"
+    "  • Ограничения по здоровью\n"
+    "  • Предпочтения по питанию\n"
+    "  • История веса и дневник питания\n"
+    "  • Отзывы\n\n"
+    "<b>2. Зачем мы их собираем</b>\n"
+    "  • Расчёт персонального ориентира КБЖУ\n"
+    "  • Составление индивидуального меню\n"
+    "  • Отслеживание прогресса\n"
+    "  • Ежедневная поддержка\n\n"
+    "<b>3. Кому мы передаём данные</b>\n"
+    "  • OpenAI API — для генерации меню\n"
+    "    и анализа питания (передаются\n"
+    "    обезличенные параметры: КБЖУ,\n"
+    "    ограничения, предпочтения —\n"
+    "    без привязки к личности)\n"
+    "  • Третьим лицам данные\n"
+    "    <b>не передаются</b>\n\n"
+    "<b>4. Как мы храним данные</b>\n"
+    "  • База данных на защищённом сервере\n"
+    "  • Доступ только у администратора\n\n"
+    "<b>5. Ваши права</b>\n"
+    "  • Запросить удаление всех данных:\n"
+    "    команда /deletedata\n"
+    "  • Отказаться от использования\n"
+    "    в любой момент\n\n"
+    "<b>6. Специальные категории</b>\n"
+    "  Данные о здоровье (ограничения)\n"
+    "  обрабатываются с вашего явного\n"
+    "  согласия (ст. 10 152-ФЗ).\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━\n"
+    "<i>Оператор: сервис FORMA\n"
+    "Основание: согласие субъекта (ст. 6, 9 152-ФЗ)</i>"
+)
+
+
 @router.message(CommandStart())
 async def start(m: Message):
-    text = (
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "       <b>F O R M A</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Спокойный сервис по питанию.\n"
-        "Помогает изменить форму тела\n"
-        "без крайностей и чувства вины.\n\n"
-        "Выберите действие 👇"
+    if not await has_consent(m.from_user.id):
+        await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
+        return
+    await m.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
+
+
+@router.callback_query(F.data == "consent:policy")
+async def show_policy(cb: CallbackQuery):
+    await cb.message.edit_text(PRIVACY_POLICY, parse_mode="HTML", reply_markup=kb_consent())
+    await cb.answer()
+
+
+@router.callback_query(F.data == "consent:accept")
+async def accept_consent(cb: CallbackQuery):
+    await save_consent(cb.from_user.id)
+    await cb.message.edit_text(
+        "✅ Спасибо! Согласие принято.\n\n" + WELCOME_TEXT,
+        parse_mode="HTML",
+        reply_markup=await _kb(cb.from_user.id),
     )
-    await m.answer(text, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
+    await cb.answer()
 
 
 @router.callback_query(F.data == "main:info")

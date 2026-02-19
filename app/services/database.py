@@ -99,6 +99,12 @@ def init_db():
             text       TEXT NOT NULL,
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS consent (
+            user_id      INTEGER PRIMARY KEY,
+            accepted     INTEGER NOT NULL DEFAULT 0,
+            accepted_at  TEXT
+        );
     """)
     # Migrations
     for col, typ in [("goal_weight", "REAL"), ("food_prefs", "TEXT")]:
@@ -488,6 +494,38 @@ def get_review_count() -> int:
     return count
 
 
+# ── Consent ──────────────────────────────────────────────────────
+
+def has_consent(user_id: int) -> bool:
+    conn = _conn()
+    row = conn.execute(
+        "SELECT accepted FROM consent WHERE user_id = ? AND accepted = 1", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def save_consent(user_id: int):
+    conn = _conn()
+    conn.execute(
+        """
+        INSERT INTO consent (user_id, accepted, accepted_at) VALUES (?, 1, ?)
+        ON CONFLICT(user_id) DO UPDATE SET accepted=1, accepted_at=excluded.accepted_at
+        """,
+        (user_id, datetime.now().isoformat()),
+    )
+    conn.close()
+
+
+def delete_user_data(user_id: int):
+    """Remove all personal data for a user (GDPR / 152-FZ right to erasure)."""
+    conn = _conn()
+    for table in ("profiles", "weight_log", "daily_log", "menu_log",
+                  "subscribers", "subscriptions", "whitelist", "reviews", "consent"):
+        conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+    conn.close()
+
+
 # ── Init on import ────────────────────────────────────────────────
 
 init_db()
@@ -583,3 +621,12 @@ async def a_get_all_reviews(limit=50):
 
 async def a_get_review_count():
     return await arun(get_review_count)
+
+async def a_has_consent(user_id):
+    return await arun(has_consent, user_id)
+
+async def a_save_consent(user_id):
+    return await arun(save_consent, user_id)
+
+async def a_delete_user_data(user_id):
+    return await arun(delete_user_data, user_id)

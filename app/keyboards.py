@@ -29,6 +29,15 @@ def kb_start(subscribed: bool = False, has_profile: bool = False, can_renew: boo
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+# ── Согласие на обработку данных ──────────────────────────────────
+
+def kb_consent():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📄 Политика конфиденциальности", callback_data="consent:policy")],
+        [InlineKeyboardButton(text="✅ Принимаю", callback_data="consent:accept")],
+    ])
+
+
 # ── Утреннее состояние ────────────────────────────────────────────
 
 def kb_morning_state():
