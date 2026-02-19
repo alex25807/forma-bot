@@ -11,7 +11,7 @@ from aiogram.types import (
 
 from app.config import settings
 from app.services.database import (
-    a_save_subscription as save_subscription,
+    a_set_subscription as save_subscription,
     a_get_subscription as get_subscription,
     a_get_user_plan as get_user_plan,
     a_is_whitelisted as is_whitelisted,

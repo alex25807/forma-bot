@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery, Update
 
-from app.services.database import has_consent
+from app.services.database import a_has_consent as has_consent
 from app.keyboards import kb_consent
 
 CONSENT_TEXT = (
@@ -42,7 +42,7 @@ class ConsentMiddleware(BaseMiddleware):
             if cmd in ALLOWED_COMMANDS:
                 return await handler(event, data)
 
-        if has_consent(user.id):
+        if await has_consent(user.id):
             return await handler(event, data)
 
         if isinstance(event, CallbackQuery):
