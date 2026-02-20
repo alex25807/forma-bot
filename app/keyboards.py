@@ -261,6 +261,16 @@ def kb_after_menu(has_premium: bool = False):
     if has_premium:
         rows.append([InlineKeyboardButton(text="📥 Скачать меню", callback_data="menu:download")])
     rows.append([InlineKeyboardButton(text="↩️ В главное меню", callback_data="back:menu")])
+
+
+def kb_after_recipe(has_premium: bool = False):
+    """Keyboard shown after recipe generation."""
+    rows = [
+        [InlineKeyboardButton(text="👨‍🍳 Ещё рецепт", callback_data="menu:recipe")],
+    ]
+    if has_premium:
+        rows.append([InlineKeyboardButton(text="📥 Скачать рецепт", callback_data="recipe:download")])
+    rows.append([InlineKeyboardButton(text="↩️ В главное меню", callback_data="back:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

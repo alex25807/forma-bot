@@ -10,6 +10,7 @@ from aiogram.types import BufferedInputFile
 from app.keyboards import (
     kb_gender,
     kb_activity,
+    kb_after_recipe,
     kb_target,
     kb_goal_weight_skip,
     kb_restrictions,
@@ -770,6 +771,38 @@ async def renew_menu(cb: CallbackQuery):
 
 # ── Скачать меню ─────────────────────────────────────────────────
 
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and decode entities for plain-text export."""
+    import re
+    text = re.sub(r"<br\s*/?>", "\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    return text
+
+
+def _make_html_doc(title: str, header_info: str, body_html: str) -> str:
+    """Wrap content in a styled HTML document for nice viewing."""
+    return (
+        "<!DOCTYPE html>\n<html><head>\n"
+        '<meta charset="utf-8">\n'
+        f"<title>{title}</title>\n"
+        "<style>\n"
+        "  body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 700px;\n"
+        "         margin: 30px auto; padding: 0 20px; line-height: 1.6;\n"
+        "         color: #333; background: #fafafa; }\n"
+        "  h1 { color: #2d6a4f; border-bottom: 2px solid #2d6a4f; padding-bottom: 8px; }\n"
+        "  .info { background: #e8f5e9; padding: 12px 16px; border-radius: 8px;\n"
+        "          margin-bottom: 20px; font-size: 14px; }\n"
+        "  .content { background: #fff; padding: 20px; border-radius: 8px;\n"
+        "             box-shadow: 0 1px 3px rgba(0,0,0,0.1); white-space: pre-wrap; }\n"
+        "</style>\n</head><body>\n"
+        f"<h1>{title}</h1>\n"
+        f'<div class="info">{header_info}</div>\n'
+        f'<div class="content">{body_html}</div>\n'
+        "</body></html>"
+    )
+
+
 @router.callback_query(F.data == "menu:download")
 async def download_menu(cb: CallbackQuery):
     uid = cb.from_user.id
@@ -784,17 +817,17 @@ async def download_menu(cb: CallbackQuery):
         return
 
     menu_text = last["menu_text"]
-    header = (
-        f"FORMA — Меню на 3 дня\n"
+    date_str = last["created_at"][:10]
+    header_info = (
         f"Ориентир: {last['calories']} ккал "
-        f"(Б {last['protein_g']} / Ж {last['fat_g']} / У {last['carbs_g']})\n"
-        f"Дата: {last['created_at'][:10]}\n"
-        f"{'=' * 40}\n\n"
+        f"(Б {last['protein_g']} / Ж {last['fat_g']} / У {last['carbs_g']})<br>"
+        f"Дата: {date_str}"
     )
 
-    file_bytes = (header + menu_text).encode("utf-8")
-    doc = BufferedInputFile(file_bytes, filename=f"forma_menu_{last['created_at'][:10]}.txt")
-    await cb.message.answer_document(doc, caption="📥 Ваше меню FORMA")
+    html = _make_html_doc("FORMA — Меню на 3 дня", header_info, menu_text)
+    file_bytes = html.encode("utf-8")
+    doc = BufferedInputFile(file_bytes, filename=f"forma_menu_{date_str}.html")
+    await cb.message.answer_document(doc, caption="📥 Ваше меню FORMA\n<i>Откройте в браузере</i>", parse_mode="HTML")
     await cb.answer()
 
 
@@ -843,8 +876,10 @@ async def generate_recipe(m: Message, state: FSMContext):
 
     await wait_msg.delete()
 
+    await state.update_data(last_recipe=recipe, last_recipe_dish=dish)
+
     standard = await has_standard_access(m.from_user.id)
-    kb = kb_after_menu(has_premium=standard)
+    kb = kb_after_recipe(has_premium=standard)
 
     if len(recipe) <= 4096:
         await m.answer(recipe, parse_mode="HTML", reply_markup=kb)
@@ -853,3 +888,31 @@ async def generate_recipe(m: Message, state: FSMContext):
         for i, chunk in enumerate(chunks):
             markup = kb if i == len(chunks) - 1 else None
             await m.answer(chunk, parse_mode="HTML", reply_markup=markup)
+
+
+@router.callback_query(F.data == "recipe:download")
+async def download_recipe(cb: CallbackQuery, state: FSMContext):
+    uid = cb.from_user.id
+    standard = await has_standard_access(uid)
+    if not standard:
+        await cb.answer("📥 Скачивание доступно по подписке", show_alert=True)
+        return
+
+    data = await state.get_data()
+    recipe_text = data.get("last_recipe")
+    dish_name = data.get("last_recipe_dish", "рецепт")
+
+    if not recipe_text:
+        await cb.answer("Рецепт не найден. Запросите новый.", show_alert=True)
+        return
+
+    html = _make_html_doc(
+        f"FORMA — Рецепт: {dish_name}",
+        f"Блюдо: {dish_name}",
+        recipe_text,
+    )
+    file_bytes = html.encode("utf-8")
+    safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in dish_name)[:40]
+    doc = BufferedInputFile(file_bytes, filename=f"forma_recipe_{safe_name}.html")
+    await cb.message.answer_document(doc, caption="📥 Рецепт FORMA\n<i>Откройте в браузере</i>", parse_mode="HTML")
+    await cb.answer()
