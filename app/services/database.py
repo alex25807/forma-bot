@@ -30,21 +30,22 @@ def init_db():
         );
 
         CREATE TABLE IF NOT EXISTS profiles (
-            user_id      INTEGER PRIMARY KEY,
-            gender       TEXT,
-            height_cm    REAL,
-            weight_kg    REAL,
-            age          INTEGER,
-            activity     TEXT,
-            target       TEXT,
-            goal_weight  REAL,
-            restrictions TEXT,
-            soup_pref    INTEGER DEFAULT 1,
-            calories     INTEGER,
-            protein_g    INTEGER,
-            fat_g        INTEGER,
-            carbs_g      INTEGER,
-            updated_at   TEXT NOT NULL
+            user_id       INTEGER PRIMARY KEY,
+            gender        TEXT,
+            height_cm     REAL,
+            weight_kg     REAL,
+            age           INTEGER,
+            activity      TEXT,
+            target        TEXT,
+            goal_weight   REAL,
+            restrictions  TEXT,
+            soup_pref     INTEGER DEFAULT 1,
+            fitness_level TEXT,
+            calories      INTEGER,
+            protein_g     INTEGER,
+            fat_g         INTEGER,
+            carbs_g       INTEGER,
+            updated_at    TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS weight_log (
@@ -116,9 +117,17 @@ def init_db():
             cost_usd     REAL DEFAULT 0,
             created_at   TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS fitness_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            exercises    TEXT NOT NULL,
+            completed    INTEGER DEFAULT 0,
+            created_at   TEXT NOT NULL
+        );
     """)
     # Migrations
-    for col, typ in [("goal_weight", "REAL"), ("food_prefs", "TEXT")]:
+    for col, typ in [("goal_weight", "REAL"), ("food_prefs", "TEXT"), ("fitness_level", "TEXT")]:
         try:
             conn.execute(f"ALTER TABLE profiles ADD COLUMN {col} {typ}")
         except sqlite3.OperationalError:
@@ -580,6 +589,8 @@ def get_api_stats() -> dict:
     ).fetchone()
 
     plans = {r[0]: r[1] for r in plans_rows}
+    fitness_total = conn.execute("SELECT COUNT(*) FROM fitness_log").fetchone()[0]
+    fitness_done = conn.execute("SELECT COUNT(*) FROM fitness_log WHERE completed = 1").fetchone()[0]
 
     conn.close()
     return {
@@ -591,7 +602,84 @@ def get_api_stats() -> dict:
         "consents": consent_row[0], "vip": vip_row[0],
         "plans": plans, "menus_total": menus_row[0],
         "recipes_total": recipes_row[0],
+        "fitness_total": fitness_total, "fitness_done": fitness_done,
     }
+
+
+# ── Fitness module ───────────────────────────────────────────────
+
+def get_fitness_level(user_id: int) -> str | None:
+    conn = _conn()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT fitness_level FROM profiles WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    if row and row["fitness_level"]:
+        return row["fitness_level"]
+    return None
+
+
+def set_fitness_level(user_id: int, level: str):
+    conn = _conn()
+    conn.execute(
+        "UPDATE profiles SET fitness_level = ? WHERE user_id = ?",
+        (level, user_id),
+    )
+    conn.close()
+
+
+def save_fitness_log(user_id: int, exercises: str, completed: int = 0):
+    conn = _conn()
+    conn.execute(
+        "INSERT INTO fitness_log (user_id, exercises, completed, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, exercises, completed, datetime.now().isoformat()),
+    )
+    conn.close()
+
+
+def mark_fitness_done(user_id: int):
+    conn = _conn()
+    conn.execute(
+        """UPDATE fitness_log SET completed = 1
+           WHERE user_id = ? AND id = (
+               SELECT id FROM fitness_log WHERE user_id = ?
+               ORDER BY created_at DESC LIMIT 1
+           )""",
+        (user_id, user_id),
+    )
+    conn.close()
+
+
+def get_fitness_stats(user_id: int) -> dict:
+    conn = _conn()
+    total = conn.execute(
+        "SELECT COUNT(*) FROM fitness_log WHERE user_id = ?", (user_id,)
+    ).fetchone()[0]
+    done = conn.execute(
+        "SELECT COUNT(*) FROM fitness_log WHERE user_id = ? AND completed = 1", (user_id,)
+    ).fetchone()[0]
+    week = conn.execute(
+        "SELECT COUNT(*) FROM fitness_log WHERE user_id = ? AND completed = 1 AND created_at >= date('now', '-7 days')",
+        (user_id,),
+    ).fetchone()[0]
+    today = conn.execute(
+        "SELECT COUNT(*) FROM fitness_log WHERE user_id = ? AND created_at >= date('now')",
+        (user_id,),
+    ).fetchone()[0]
+    conn.close()
+    return {"total": total, "done": done, "week": week, "today": today}
+
+
+def get_today_fitness(user_id: int) -> dict | None:
+    conn = _conn()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM fitness_log WHERE user_id = ? AND created_at >= date('now') ORDER BY created_at DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 # ── Consent ──────────────────────────────────────────────────────
@@ -622,7 +710,7 @@ def delete_user_data(user_id: int):
     conn = _conn()
     for table in ("profiles", "weight_log", "daily_log", "menu_log",
                   "subscribers", "subscriptions", "whitelist", "reviews",
-                  "consent", "api_usage"):
+                  "consent", "api_usage", "fitness_log"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     conn.close()
 
@@ -743,3 +831,21 @@ async def a_log_api_usage(user_id, action, model, tokens_in, tokens_out, cost_us
 
 async def a_get_api_stats():
     return await arun(get_api_stats)
+
+async def a_get_fitness_level(user_id):
+    return await arun(get_fitness_level, user_id)
+
+async def a_set_fitness_level(user_id, level):
+    return await arun(set_fitness_level, user_id, level)
+
+async def a_save_fitness_log(user_id, exercises, completed=0):
+    return await arun(save_fitness_log, user_id, exercises, completed)
+
+async def a_mark_fitness_done(user_id):
+    return await arun(mark_fitness_done, user_id)
+
+async def a_get_fitness_stats(user_id):
+    return await arun(get_fitness_stats, user_id)
+
+async def a_get_today_fitness(user_id):
+    return await arun(get_today_fitness, user_id)

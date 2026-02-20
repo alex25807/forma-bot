@@ -26,6 +26,10 @@ def kb_start(
             InlineKeyboardButton(text="📈 Мой прогресс", callback_data="main:progress"),
             InlineKeyboardButton(text="⚖️ Обновить вес", callback_data="main:weight"),
         ])
+    if has_profile and plan != "free":
+        rows.append([InlineKeyboardButton(text="🏃 Упражнения на сегодня", callback_data="main:fitness")])
+    elif has_profile and subscribed:
+        rows.append([InlineKeyboardButton(text="🔒 Упражнения (подписка)", callback_data="main:fitness_locked")])
     if plan == "premium":
         rows.append([InlineKeyboardButton(text="📷 Анализ фото еды", callback_data="main:photo")])
     rows.append([InlineKeyboardButton(text="✍️ Отзыв", callback_data="main:review_send")])
@@ -285,6 +289,23 @@ def kb_progress(has_premium: bool = False):
         ])
     rows.append([InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def kb_fitness_level():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌱 Начинающий", callback_data="fitlvl:beginner")],
+        [InlineKeyboardButton(text="🚶 Базовый", callback_data="fitlvl:basic")],
+        [InlineKeyboardButton(text="💪 Уверенный", callback_data="fitlvl:confident")],
+        [InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")],
+    ])
+
+
+def kb_fitness_done():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Сделал(а)!", callback_data="fit:done")],
+        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="fit:skip")],
+        [InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")],
+    ])
 
 
 def kb_payment_plans():

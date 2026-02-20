@@ -35,3 +35,7 @@ class RecipeForm(StatesGroup):
 
 class PhotoForm(StatesGroup):
     waiting = State()
+
+
+class FitnessForm(StatesGroup):
+    level = State()
