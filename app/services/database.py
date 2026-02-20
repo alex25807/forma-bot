@@ -448,6 +448,9 @@ def _sub_active(sub: dict | None) -> bool:
 
 def get_user_plan(user_id: int) -> str:
     """Return effective plan: 'free', 'standard', or 'premium'."""
+    from app.config import settings
+    if settings.ADMIN_ID and user_id == settings.ADMIN_ID:
+        return "premium"
     if is_whitelisted(user_id):
         return "standard"
     sub = get_subscription(user_id)
