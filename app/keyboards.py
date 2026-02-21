@@ -235,6 +235,40 @@ def kb_food_prefs_done(selected: list[str]):
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+# ── Опрос: предпочитаемая кухня ──────────────────────────────────
+
+CUISINE_LABELS = {
+    "russian": "🇷🇺 Русская",
+    "european": "🇪🇺 Европейская",
+    "italian": "🇮🇹 Итальянская",
+    "greek": "🇬🇷 Греческая",
+    "french": "🇫🇷 Французская",
+    "asian": "🇯🇵 Азиатская",
+    "caucasian": "🇬🇪 Кавказская",
+}
+
+
+def kb_cuisine(selected: list[str] | None = None):
+    selected = selected or []
+    rows = []
+    for key, label in CUISINE_LABELS.items():
+        mark = "✅ " if key in selected else ""
+        rows.append([InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"cuisine:{key}")])
+    rows.append([InlineKeyboardButton(text="✏️ Другое (напишу)", callback_data="cuisine:custom")])
+    rows.append([InlineKeyboardButton(text="🌍 Любая кухня", callback_data="cuisine:any")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def kb_cuisine_done(selected: list[str]):
+    rows = []
+    for key, label in CUISINE_LABELS.items():
+        mark = "✅ " if key in selected else ""
+        rows.append([InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"cuisine:{key}")])
+    rows.append([InlineKeyboardButton(text="✏️ Другое (напишу)", callback_data="cuisine:custom")])
+    rows.append([InlineKeyboardButton(text="➡️ Готово, продолжить", callback_data="cuisine:done")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 # ── Опрос: супы в меню? ──────────────────────────────────────────
 
 def kb_soup_pref():

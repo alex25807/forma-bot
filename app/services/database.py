@@ -41,6 +41,7 @@ def init_db():
             restrictions  TEXT,
             soup_pref     INTEGER DEFAULT 1,
             fitness_level TEXT,
+            cuisine       TEXT,
             calories      INTEGER,
             protein_g     INTEGER,
             fat_g         INTEGER,
@@ -127,7 +128,7 @@ def init_db():
         );
     """)
     # Migrations
-    for col, typ in [("goal_weight", "REAL"), ("food_prefs", "TEXT"), ("fitness_level", "TEXT")]:
+    for col, typ in [("goal_weight", "REAL"), ("food_prefs", "TEXT"), ("fitness_level", "TEXT"), ("cuisine", "TEXT")]:
         try:
             conn.execute(f"ALTER TABLE profiles ADD COLUMN {col} {typ}")
         except sqlite3.OperationalError:
@@ -183,22 +184,23 @@ def save_profile(
     carbs_g: int,
     goal_weight: float | None = None,
     food_prefs: list[str] | None = None,
+    cuisine: list[str] | None = None,
 ):
     conn = _conn()
     conn.execute(
         """
         INSERT INTO profiles
             (user_id, gender, height_cm, weight_kg, age, activity, target,
-             goal_weight, restrictions, food_prefs, soup_pref,
+             goal_weight, restrictions, food_prefs, cuisine, soup_pref,
              calories, protein_g, fat_g, carbs_g, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             gender=excluded.gender, height_cm=excluded.height_cm,
             weight_kg=excluded.weight_kg, age=excluded.age,
             activity=excluded.activity, target=excluded.target,
             goal_weight=excluded.goal_weight,
             restrictions=excluded.restrictions, food_prefs=excluded.food_prefs,
-            soup_pref=excluded.soup_pref,
+            cuisine=excluded.cuisine, soup_pref=excluded.soup_pref,
             calories=excluded.calories, protein_g=excluded.protein_g,
             fat_g=excluded.fat_g, carbs_g=excluded.carbs_g,
             updated_at=excluded.updated_at
@@ -206,7 +208,8 @@ def save_profile(
         (
             user_id, gender, height_cm, weight_kg, age, activity, target,
             goal_weight, json.dumps(restrictions, ensure_ascii=False),
-            json.dumps(food_prefs or [], ensure_ascii=False), int(soup_pref),
+            json.dumps(food_prefs or [], ensure_ascii=False),
+            json.dumps(cuisine or [], ensure_ascii=False), int(soup_pref),
             calories, protein_g, fat_g, carbs_g,
             datetime.now().isoformat(),
         ),
@@ -224,6 +227,7 @@ def get_profile(user_id: int) -> dict | None:
     d = dict(row)
     d["restrictions"] = json.loads(d["restrictions"]) if d["restrictions"] else []
     d["food_prefs"] = json.loads(d["food_prefs"]) if d.get("food_prefs") else []
+    d["cuisine"] = json.loads(d["cuisine"]) if d.get("cuisine") else []
     d["soup_pref"] = bool(d["soup_pref"])
     return d
 

@@ -17,6 +17,9 @@ from app.keyboards import (
     kb_restrictions_done,
     kb_food_prefs,
     kb_food_prefs_done,
+    kb_cuisine,
+    kb_cuisine_done,
+    CUISINE_LABELS,
     kb_soup_pref,
     kb_menu_confirm,
     kb_after_menu,
@@ -71,6 +74,14 @@ ACTIVITY_LABEL = {
     "very_high": "очень высокая",
 }
 TARGET_LABEL = {"cut": "снижение", "maintain": "поддержание", "gain": "набор"}
+
+
+def _build_cuisine_prompt(cuisine: list[str]) -> str:
+    """Convert cuisine list into a prompt line for LLM."""
+    if not cuisine or cuisine == ["any"]:
+        return ""
+    labels = [CUISINE_LABELS.get(c, c) for c in cuisine]
+    return f"Предпочитаемая кухня: {', '.join(labels)}. Приоритет блюдам этих кухонь.\n"
 
 
 def _build_prefs_prompt(food_prefs: list[str]) -> str:
@@ -395,15 +406,14 @@ def _format_food_prefs(selected: list[str]) -> str:
 @router.callback_query(CalcForm.food_prefs, F.data == "pref:all")
 async def food_prefs_all(cb: CallbackQuery, state: FSMContext):
     await state.update_data(food_prefs=["all"])
-    await _show_kbju(cb, state, prefs_summary="всё подходит")
+    await _ask_cuisine(cb, state)
 
 
 @router.callback_query(CalcForm.food_prefs, F.data == "pref:done")
 async def food_prefs_done(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     selected = data.get("food_prefs", [])
-    summary = _format_food_prefs(selected) if selected else "всё подходит"
-    await _show_kbju(cb, state, prefs_summary=summary)
+    await _ask_cuisine(cb, state)
 
 
 @router.callback_query(CalcForm.food_prefs, F.data == "pref:custom")
@@ -470,6 +480,85 @@ async def toggle_food_pref(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 
+# ── Шаг 6.5: Предпочитаемая кухня ─────────────────────────────────
+
+async def _ask_cuisine(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(CalcForm.cuisine)
+    await cb.message.answer(
+        "🍽 <b>Предпочитаемая кухня</b>\n\n"
+        "Выберите одну или несколько кухонь.\n"
+        "Меню будет составлено с акцентом\n"
+        "на блюда выбранных кухонь.",
+        parse_mode="HTML",
+        reply_markup=kb_cuisine(),
+    )
+    await cb.answer()
+
+
+@router.callback_query(CalcForm.cuisine, F.data == "cuisine:any")
+async def cuisine_any(cb: CallbackQuery, state: FSMContext):
+    await state.update_data(cuisine=["any"])
+    data = await state.get_data()
+    prefs = data.get("food_prefs", [])
+    summary = _format_food_prefs(prefs) if prefs and prefs != ["all"] else "всё подходит"
+    await _show_kbju(cb, state, prefs_summary=summary)
+
+
+@router.callback_query(CalcForm.cuisine, F.data == "cuisine:done")
+async def cuisine_done(cb: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected = data.get("cuisine", [])
+    prefs = data.get("food_prefs", [])
+    summary = _format_food_prefs(prefs) if prefs and prefs != ["all"] else "всё подходит"
+    await _show_kbju(cb, state, prefs_summary=summary)
+
+
+@router.callback_query(CalcForm.cuisine, F.data == "cuisine:custom")
+async def cuisine_custom(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(CalcForm.cuisine_custom)
+    await cb.message.edit_text(
+        "✏️ Напишите предпочитаемую кухню.\n"
+        "<i>Например: узбекская, мексиканская,\n"
+        "средиземноморская</i>",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+
+@router.message(CalcForm.cuisine_custom)
+async def set_cuisine_custom(m: Message, state: FSMContext):
+    data = await state.get_data()
+    selected: list = data.get("cuisine", [])
+    selected.append(m.text.strip())
+    await state.update_data(cuisine=selected)
+    await state.set_state(CalcForm.cuisine)
+    labels = [CUISINE_LABELS.get(c, c) for c in selected]
+    await m.answer(
+        f"🍽 <b>Кухня</b>\n\nВыбрано: {', '.join(labels)}\n\n"
+        "Добавьте ещё или нажмите <b>«Готово»</b>.",
+        parse_mode="HTML",
+        reply_markup=kb_cuisine_done(selected),
+    )
+
+
+@router.callback_query(CalcForm.cuisine, F.data.startswith("cuisine:"))
+async def toggle_cuisine(cb: CallbackQuery, state: FSMContext):
+    key = cb.data.split(":")[1]
+    data = await state.get_data()
+    selected: list = data.get("cuisine", [])
+    if key in selected:
+        selected.remove(key)
+    else:
+        selected.append(key)
+    await state.update_data(cuisine=selected)
+
+    if selected:
+        await cb.message.edit_reply_markup(reply_markup=kb_cuisine_done(selected))
+    else:
+        await cb.message.edit_reply_markup(reply_markup=kb_cuisine())
+    await cb.answer()
+
+
 # ── Показ КБЖУ ───────────────────────────────────────────────────
 
 async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = ""):
@@ -477,8 +566,11 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
     restrictions = data.get("restrictions", [])
     goal_weight = data.get("goal_weight")
     food_prefs = data.get("food_prefs", [])
+    cuisine = data.get("cuisine", [])
 
-    await cb.message.edit_text(f"Предпочтения: {prefs_summary} ✓")
+    cuisine_labels = [CUISINE_LABELS.get(c, c) for c in cuisine if c != "any"]
+    cuisine_text = ", ".join(cuisine_labels) if cuisine_labels else "любая"
+    await cb.message.edit_text(f"Кухня: {cuisine_text} ✓")
 
     result = compute_kbju(
         height_cm=data["height"],
@@ -507,6 +599,7 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
         carbs_g=result.carbs_g,
         goal_weight=goal_weight,
         food_prefs=food_prefs,
+        cuisine=cuisine,
     )
 
     restr_summary = _format_selected_restrictions(restrictions) if restrictions else "нет"
@@ -526,6 +619,9 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
 
     if prefs_summary and prefs_summary != "всё подходит":
         text += f"  🍽  {prefs_summary}\n"
+
+    if cuisine_labels:
+        text += f"  🌍  {', '.join(cuisine_labels)}\n"
 
     text += (
         "\n"
@@ -584,6 +680,7 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
 
     restrictions_text = _format_selected_restrictions(restrictions) if restrictions else "нет"
     prefs_text = _build_prefs_prompt(food_prefs)
+    cuisine_text = _build_cuisine_prompt(data.get("cuisine", []))
 
     system_prompt = (MENU_SYSTEM_SOUP if wants_soup else MENU_SYSTEM_NO_SOUP).format(
         plan_duration=3,
@@ -594,6 +691,7 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
         f"Пол: {GENDER_LABEL[data['gender']]}, "
         f"возраст {data['age']}, вес {data['weight']} кг.\n"
         f"Ограничения по здоровью: {restrictions_text}.\n"
+        f"{cuisine_text}"
         f"{prefs_text}"
     )
 
@@ -700,6 +798,7 @@ async def renew_menu(cb: CallbackQuery):
             carbs_g=carbs_g,
             goal_weight=profile.get("goal_weight"),
             food_prefs=profile.get("food_prefs", []),
+            cuisine=profile.get("cuisine", []),
         )
     else:
         calories = profile["calories"]
@@ -711,6 +810,8 @@ async def renew_menu(cb: CallbackQuery):
     restrictions_text = _format_selected_restrictions(restrictions) if restrictions else "нет"
     food_prefs = profile.get("food_prefs", [])
     prefs_text = _build_prefs_prompt(food_prefs)
+    cuisine = profile.get("cuisine", [])
+    cuisine_text = _build_cuisine_prompt(cuisine if isinstance(cuisine, list) else [])
     wants_soup = profile.get("soup_pref", True)
 
     system_prompt = (MENU_SYSTEM_SOUP if wants_soup else MENU_SYSTEM_NO_SOUP).format(
@@ -723,6 +824,7 @@ async def renew_menu(cb: CallbackQuery):
         f"Пол: {GENDER_LABEL[profile['gender']]}, "
         f"возраст {profile['age']}, вес {current_weight} кг.\n"
         f"Ограничения по здоровью: {restrictions_text}.\n"
+        f"{cuisine_text}"
         f"{prefs_text}\n"
         "ВАЖНО: составьте НОВОЕ меню, с другими блюдами. Разнообразие важно!"
     )

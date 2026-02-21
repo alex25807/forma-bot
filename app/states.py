@@ -13,6 +13,8 @@ class CalcForm(StatesGroup):
     restrictions_detail = State()
     food_prefs = State()
     food_prefs_custom = State()
+    cuisine = State()
+    cuisine_custom = State()
     soup_pref = State()
     menu_confirm = State()
 
