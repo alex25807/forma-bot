@@ -220,9 +220,10 @@ async def subscribe(cb: CallbackQuery):
 
     profile = await get_profile(cb.from_user.id)
     has_profile = profile is not None
+    plan = await get_user_plan(cb.from_user.id)
     days = await days_since_last_menu(cb.from_user.id)
     can_renew = has_profile and days is not None and days >= MENU_PERIOD
-    kb = kb_start(subscribed=True, has_profile=has_profile, can_renew=can_renew)
+    kb = kb_start(subscribed=True, has_profile=has_profile, can_renew=can_renew, plan=plan)
 
     if is_new:
         await cb.message.edit_text("✨ Оформляем подписку...")

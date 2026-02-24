@@ -823,23 +823,17 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
     standard = await has_standard_access(cb.from_user.id)
     is_low_activity = data.get("activity") in ("sedentary", "light")
     kb = kb_after_menu(
-        has_premium=standard,
+        has_standard_access=standard,
         show_fitness=standard and is_low_activity,
         fitness_locked=(not standard) and is_low_activity,
     )
-    await cb.message.answer(
-        "✅ Меню готово.\nВыберите следующее действие 👇",
-        reply_markup=kb,
-    )
     if len(menu_text) <= 4096:
-        await cb.message.answer(menu_text, reply_markup=kb)
+        await cb.message.answer(menu_text)
     else:
         chunks = [menu_text[i : i + 4096] for i in range(0, len(menu_text), 4096)]
-        for i, chunk in enumerate(chunks):
-            markup = kb if i == len(chunks) - 1 else None
-            await cb.message.answer(chunk, reply_markup=markup)
-    await cb.message.answer("Что дальше?", reply_markup=kb)
-    await cb.message.answer("Или выберите действие из главного меню 👇", reply_markup=await _kb(cb.from_user.id))
+        for chunk in chunks:
+            await cb.message.answer(chunk)
+    await cb.message.answer("✅ Меню готово. Что дальше?", reply_markup=kb)
 
 
 @router.callback_query(CalcForm.menu_confirm, F.data == "menu:no")
@@ -1002,25 +996,19 @@ async def renew_menu(cb: CallbackQuery):
     standard = await has_standard_access(uid)
     is_low_activity = profile.get("activity") in ("sedentary", "light")
     kb = kb_after_menu(
-        has_premium=standard,
+        has_standard_access=standard,
         show_fitness=standard and is_low_activity,
         fitness_locked=(not standard) and is_low_activity,
     )
-    await cb.message.answer(
-        "✅ Новое меню готово.\nВыберите следующее действие 👇",
-        reply_markup=kb,
-    )
 
     if len(full_text) <= 4096:
-        await cb.message.answer(full_text, parse_mode="HTML", reply_markup=kb)
+        await cb.message.answer(full_text, parse_mode="HTML")
     else:
         chunks = [full_text[i : i + 4096] for i in range(0, len(full_text), 4096)]
         for i, chunk in enumerate(chunks):
             pm = "HTML" if i == 0 else None
-            markup = kb if i == len(chunks) - 1 else None
-            await cb.message.answer(chunk, parse_mode=pm, reply_markup=markup)
-    await cb.message.answer("Что дальше?", reply_markup=kb)
-    await cb.message.answer("Или выберите действие из главного меню 👇", reply_markup=await _kb(uid))
+            await cb.message.answer(chunk, parse_mode=pm)
+    await cb.message.answer("✅ Новое меню готово. Что дальше?", reply_markup=kb)
 
 
 # ── Скачать меню ─────────────────────────────────────────────────
