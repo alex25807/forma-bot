@@ -714,12 +714,12 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
     standard = await has_standard_access(cb.from_user.id)
     kb = kb_after_menu(has_premium=standard)
     if len(menu_text) <= 4096:
-        await cb.message.answer(menu_text, reply_markup=kb)
+        await cb.message.answer(menu_text)
     else:
         chunks = [menu_text[i : i + 4096] for i in range(0, len(menu_text), 4096)]
-        for i, chunk in enumerate(chunks):
-            markup = kb if i == len(chunks) - 1 else None
-            await cb.message.answer(chunk, reply_markup=markup)
+        for chunk in chunks:
+            await cb.message.answer(chunk)
+    await cb.message.answer("Что дальше?", reply_markup=kb)
 
 
 @router.callback_query(CalcForm.menu_confirm, F.data == "menu:no")
@@ -862,13 +862,13 @@ async def renew_menu(cb: CallbackQuery):
     kb = kb_after_menu(has_premium=standard)
 
     if len(full_text) <= 4096:
-        await cb.message.answer(full_text, parse_mode="HTML", reply_markup=kb)
+        await cb.message.answer(full_text, parse_mode="HTML")
     else:
         chunks = [full_text[i : i + 4096] for i in range(0, len(full_text), 4096)]
         for i, chunk in enumerate(chunks):
-            markup = kb if i == len(chunks) - 1 else None
             pm = "HTML" if i == 0 else None
-            await cb.message.answer(chunk, parse_mode=pm, reply_markup=markup)
+            await cb.message.answer(chunk, parse_mode=pm)
+    await cb.message.answer("Что дальше?", reply_markup=kb)
 
 
 # ── Скачать меню ─────────────────────────────────────────────────
