@@ -34,6 +34,7 @@ def kb_start(
     if plan in ("standard", "premium"):
         label = "Стандарт" if plan == "standard" else "Премиум"
         rows.append([InlineKeyboardButton(text=f"✅ {label}", callback_data="main:subscribed_info")])
+        rows.append([InlineKeyboardButton(text="🧪 Проверить оплату", callback_data="pay:choose")])
     elif subscribed:
         rows.append([InlineKeyboardButton(text="💎 Тарифы", callback_data="pay:choose")])
     else:
@@ -313,7 +314,7 @@ def kb_accelerate_level():
 
 
 def kb_after_menu(
-    has_premium: bool = False,
+    has_standard_access: bool = False,
     show_fitness: bool = False,
     fitness_locked: bool = False,
 ):
@@ -326,7 +327,7 @@ def kb_after_menu(
         rows.append([InlineKeyboardButton(text="🏃 Упражнения на сегодня", callback_data="main:fitness")])
     elif fitness_locked:
         rows.append([InlineKeyboardButton(text="🔒 Упражнения (подписка)", callback_data="main:fitness_locked")])
-    if has_premium:
+    if has_standard_access:
         rows.append([InlineKeyboardButton(text="📥 Скачать меню", callback_data="menu:download")])
     else:
         rows.append([InlineKeyboardButton(text="🔒 Скачать меню (подписка)", callback_data="menu:download_locked")])
