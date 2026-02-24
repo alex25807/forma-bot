@@ -396,7 +396,8 @@ async def set_custom_restriction(m: Message, state: FSMContext):
 
 async def _after_restrictions(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    if data.get("target") != "cut":
+    is_low_activity = data.get("activity") in ("sedentary", "light")
+    if data.get("target") != "cut" or not is_low_activity:
         await state.update_data(accel_enabled=False, exercise_level=None, exercise_kcal=0)
         await _ask_food_prefs(cb, state)
         return
@@ -820,7 +821,12 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
     await wait_msg.delete()
 
     standard = await has_standard_access(cb.from_user.id)
-    kb = kb_after_menu(has_premium=standard)
+    is_low_activity = data.get("activity") in ("sedentary", "light")
+    kb = kb_after_menu(
+        has_premium=standard,
+        show_fitness=standard and is_low_activity,
+        fitness_locked=(not standard) and is_low_activity,
+    )
     await cb.message.answer(
         "✅ Меню готово.\nВыберите следующее действие 👇",
         reply_markup=kb,
@@ -993,7 +999,12 @@ async def renew_menu(cb: CallbackQuery):
 
     full_text = header + menu_text
     standard = await has_standard_access(uid)
-    kb = kb_after_menu(has_premium=standard)
+    is_low_activity = profile.get("activity") in ("sedentary", "light")
+    kb = kb_after_menu(
+        has_premium=standard,
+        show_fitness=standard and is_low_activity,
+        fitness_locked=(not standard) and is_low_activity,
+    )
     await cb.message.answer(
         "✅ Новое меню готово.\nВыберите следующее действие 👇",
         reply_markup=kb,
