@@ -28,10 +28,6 @@ def kb_start(
             InlineKeyboardButton(text="📈 Мой прогресс", callback_data="main:progress"),
             InlineKeyboardButton(text="⚖️ Обновить вес", callback_data="main:weight"),
         ])
-    if has_profile and plan != "free":
-        rows.append([InlineKeyboardButton(text="🏃 Упражнения на сегодня", callback_data="main:fitness")])
-    elif has_profile and subscribed:
-        rows.append([InlineKeyboardButton(text="🔒 Упражнения (подписка)", callback_data="main:fitness_locked")])
     if plan == "premium":
         rows.append([InlineKeyboardButton(text="📷 Анализ фото еды", callback_data="main:photo")])
     rows.append([InlineKeyboardButton(text="✍️ Отзыв", callback_data="main:review_send")])
@@ -316,12 +312,20 @@ def kb_accelerate_level():
     ])
 
 
-def kb_after_menu(has_premium: bool = False):
+def kb_after_menu(
+    has_premium: bool = False,
+    show_fitness: bool = False,
+    fitness_locked: bool = False,
+):
     """Keyboard shown right after menu generation."""
     rows = [
         [InlineKeyboardButton(text="👨‍🍳 Получить рецепт", callback_data="menu:recipe")],
         [InlineKeyboardButton(text="📝 Разобрать день", callback_data="main:review")],
     ]
+    if show_fitness:
+        rows.append([InlineKeyboardButton(text="🏃 Упражнения на сегодня", callback_data="main:fitness")])
+    elif fitness_locked:
+        rows.append([InlineKeyboardButton(text="🔒 Упражнения (подписка)", callback_data="main:fitness_locked")])
     if has_premium:
         rows.append([InlineKeyboardButton(text="📥 Скачать меню", callback_data="menu:download")])
     else:
