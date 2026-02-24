@@ -821,12 +821,17 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
 
     standard = await has_standard_access(cb.from_user.id)
     kb = kb_after_menu(has_premium=standard)
+    await cb.message.answer(
+        "✅ Меню готово.\nВыберите следующее действие 👇",
+        reply_markup=kb,
+    )
     if len(menu_text) <= 4096:
-        await cb.message.answer(menu_text)
+        await cb.message.answer(menu_text, reply_markup=kb)
     else:
         chunks = [menu_text[i : i + 4096] for i in range(0, len(menu_text), 4096)]
-        for chunk in chunks:
-            await cb.message.answer(chunk)
+        for i, chunk in enumerate(chunks):
+            markup = kb if i == len(chunks) - 1 else None
+            await cb.message.answer(chunk, reply_markup=markup)
     await cb.message.answer("Что дальше?", reply_markup=kb)
 
 
@@ -989,14 +994,19 @@ async def renew_menu(cb: CallbackQuery):
     full_text = header + menu_text
     standard = await has_standard_access(uid)
     kb = kb_after_menu(has_premium=standard)
+    await cb.message.answer(
+        "✅ Новое меню готово.\nВыберите следующее действие 👇",
+        reply_markup=kb,
+    )
 
     if len(full_text) <= 4096:
-        await cb.message.answer(full_text, parse_mode="HTML")
+        await cb.message.answer(full_text, parse_mode="HTML", reply_markup=kb)
     else:
         chunks = [full_text[i : i + 4096] for i in range(0, len(full_text), 4096)]
         for i, chunk in enumerate(chunks):
             pm = "HTML" if i == 0 else None
-            await cb.message.answer(chunk, parse_mode=pm)
+            markup = kb if i == len(chunks) - 1 else None
+            await cb.message.answer(chunk, parse_mode=pm, reply_markup=markup)
     await cb.message.answer("Что дальше?", reply_markup=kb)
 
 
