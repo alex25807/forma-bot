@@ -1164,3 +1164,9 @@ async def download_recipe(cb: CallbackQuery, state: FSMContext):
     await cb.message.answer_document(doc, caption="📥 Рецепт FORMA\n<i>Откройте в браузере</i>", parse_mode="HTML")
     await cb.message.answer("Возвращаю в главное меню 👇", reply_markup=await _kb(uid))
     await cb.answer()
+
+
+@router.callback_query(F.data == "recipe:download_locked")
+async def download_recipe_locked(cb: CallbackQuery):
+    await cb.answer("📥 Скачивание рецепта доступно на тарифе Стандарт и выше", show_alert=True)
+    await cb.message.answer("Выберите действие 👇", reply_markup=await _kb(cb.from_user.id))
