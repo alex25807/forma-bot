@@ -1,6 +1,8 @@
 from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
     ReplyKeyboardRemove,
 )
 
@@ -41,6 +43,16 @@ def kb_start(
     else:
         rows.append([InlineKeyboardButton(text="✨ Подписаться", callback_data="main:subscribe")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def kb_quick_start():
+    """Persistent one-tap launcher shown in the input area."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🏠 Старт")]],
+        resize_keyboard=True,
+        is_persistent=True,
+        input_field_placeholder="Нажмите «🏠 Старт» для главного меню",
+    )
 
 
 # ── Согласие на обработку данных ──────────────────────────────────
@@ -287,6 +299,23 @@ def kb_menu_confirm():
     ])
 
 
+def kb_accelerate():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Да, хочу ускорить", callback_data="accel:yes")],
+        [InlineKeyboardButton(text="🙂 Нет, комфортный режим", callback_data="accel:no")],
+        [InlineKeyboardButton(text="✕ Отмена", callback_data="calc:cancel")],
+    ])
+
+
+def kb_accelerate_level():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌱 Мягкий старт (~100 ккал/день)", callback_data="accel_level:easy")],
+        [InlineKeyboardButton(text="🚶 Умеренно (~160 ккал/день)", callback_data="accel_level:medium")],
+        [InlineKeyboardButton(text="💪 Уверенно (~220 ккал/день)", callback_data="accel_level:active")],
+        [InlineKeyboardButton(text="✕ Отмена", callback_data="calc:cancel")],
+    ])
+
+
 def kb_after_menu(has_premium: bool = False):
     """Keyboard shown right after menu generation."""
     rows = [
@@ -295,6 +324,8 @@ def kb_after_menu(has_premium: bool = False):
     ]
     if has_premium:
         rows.append([InlineKeyboardButton(text="📥 Скачать меню", callback_data="menu:download")])
+    else:
+        rows.append([InlineKeyboardButton(text="🔒 Скачать меню (подписка)", callback_data="menu:download_locked")])
     rows.append([InlineKeyboardButton(text="↩️ В главное меню", callback_data="back:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

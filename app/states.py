@@ -11,6 +11,8 @@ class CalcForm(StatesGroup):
     goal_weight = State()
     restrictions = State()
     restrictions_detail = State()
+    accelerate = State()
+    accelerate_level = State()
     food_prefs = State()
     food_prefs_custom = State()
     cuisine = State()
