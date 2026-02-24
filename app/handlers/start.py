@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 
-from app.keyboards import kb_start, kb_consent
+from app.keyboards import kb_start, kb_consent, kb_quick_start
 from app.services.database import (
     a_add_subscriber as add_subscriber,
     a_is_subscribed as is_subscribed,
@@ -107,6 +107,16 @@ PRIVACY_POLICY = (
 @router.message(CommandStart())
 async def start(m: Message):
     if not await has_consent(m.from_user.id):
+        await m.answer("⬇️ Быстрый доступ к меню включён.", reply_markup=kb_quick_start())
+        await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
+        return
+    await m.answer("⬇️ Кнопка «🏠 Старт» доступна внизу.", reply_markup=kb_quick_start())
+    await m.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
+
+
+@router.message(F.text == "🏠 Старт")
+async def quick_start(m: Message):
+    if not await has_consent(m.from_user.id):
         await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
         return
     await m.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
@@ -121,11 +131,9 @@ async def show_policy(cb: CallbackQuery):
 @router.callback_query(F.data == "consent:accept")
 async def accept_consent(cb: CallbackQuery):
     await save_consent(cb.from_user.id)
-    await cb.message.edit_text(
-        "✅ Спасибо! Согласие принято.\n\n" + WELCOME_TEXT,
-        parse_mode="HTML",
-        reply_markup=await _kb(cb.from_user.id),
-    )
+    await cb.message.edit_text("✅ Спасибо! Согласие принято.")
+    await cb.message.answer("⬇️ Кнопка «🏠 Старт» доступна внизу.", reply_markup=kb_quick_start())
+    await cb.message.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
 
 

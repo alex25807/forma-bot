@@ -22,6 +22,8 @@ from app.keyboards import (
     CUISINE_LABELS,
     kb_soup_pref,
     kb_menu_confirm,
+    kb_accelerate,
+    kb_accelerate_level,
     kb_after_menu,
     kb_start,
     RESTRICTION_LABELS,
@@ -74,6 +76,27 @@ ACTIVITY_LABEL = {
     "very_high": "очень высокая",
 }
 TARGET_LABEL = {"cut": "снижение", "maintain": "поддержание", "gain": "набор"}
+
+EXERCISE_LEVELS = {
+    "easy": ("🌱 Мягкий старт", 100),
+    "medium": ("🚶 Умеренно", 160),
+    "active": ("💪 Уверенно", 220),
+}
+
+
+def _apply_acceleration_strategy(
+    base_calories: int,
+    exercise_kcal: int,
+    gender: str,
+    target: str,
+) -> tuple[int, int]:
+    """Variant C: exercise adds deficit, menu adjusts moderately for comfort."""
+    if target != "cut" or exercise_kcal <= 0:
+        return base_calories, 0
+    floor = 1200 if gender == "female" else 1400
+    delta = int(exercise_kcal * 0.30)
+    adjusted = max(base_calories - delta, floor)
+    return adjusted, base_calories - adjusted
 
 
 def _build_cuisine_prompt(cuisine: list[str]) -> str:
@@ -303,12 +326,12 @@ async def skip_goal_weight(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(CalcForm.restrictions, F.data == "restr:none")
 async def no_restrictions(cb: CallbackQuery, state: FSMContext):
     await state.update_data(restrictions=[])
-    await _ask_food_prefs(cb, state)
+    await _after_restrictions(cb, state)
 
 
 @router.callback_query(CalcForm.restrictions, F.data == "restr:done")
 async def restrictions_done(cb: CallbackQuery, state: FSMContext):
-    await _ask_food_prefs(cb, state)
+    await _after_restrictions(cb, state)
 
 
 @router.callback_query(CalcForm.restrictions, F.data == "restr:custom")
@@ -369,6 +392,54 @@ async def set_custom_restriction(m: Message, state: FSMContext):
         parse_mode="HTML",
         reply_markup=kb_restrictions_done(),
     )
+
+
+async def _after_restrictions(cb: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    if data.get("target") != "cut":
+        await state.update_data(accel_enabled=False, exercise_level=None, exercise_kcal=0)
+        await _ask_food_prefs(cb, state)
+        return
+
+    await state.set_state(CalcForm.accelerate)
+    await cb.message.answer(
+        "🚀 <b>Ускорить результат?</b>\n\n"
+        "Можно добавить мягкую активность\n"
+        "на 5-10 минут в день.\n\n"
+        "Мы учтём примерный расход калорий\n"
+        "при расчёте меню (вариант C: без перегиба).",
+        parse_mode="HTML",
+        reply_markup=kb_accelerate(),
+    )
+    await cb.answer()
+
+
+@router.callback_query(CalcForm.accelerate, F.data == "accel:no")
+async def accel_no(cb: CallbackQuery, state: FSMContext):
+    await state.update_data(accel_enabled=False, exercise_level=None, exercise_kcal=0)
+    await cb.message.edit_text("🙂 Ускорение: комфортный режим ✓")
+    await _ask_food_prefs(cb, state)
+
+
+@router.callback_query(CalcForm.accelerate, F.data == "accel:yes")
+async def accel_yes(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(CalcForm.accelerate_level)
+    await cb.message.edit_text(
+        "Выберите уровень активности для ускорения:\n"
+        "<i>При подборе будем бережно учитывать ограничения по здоровью.</i>",
+        parse_mode="HTML",
+        reply_markup=kb_accelerate_level(),
+    )
+    await cb.answer()
+
+
+@router.callback_query(CalcForm.accelerate_level, F.data.startswith("accel_level:"))
+async def accel_level(cb: CallbackQuery, state: FSMContext):
+    key = cb.data.split(":")[1]
+    level_label, kcal = EXERCISE_LEVELS.get(key, EXERCISE_LEVELS["easy"])
+    await state.update_data(accel_enabled=True, exercise_level=key, exercise_kcal=kcal)
+    await cb.message.edit_text(f"{level_label} ✓\nПримерный расход: ~{kcal} ккал/день")
+    await _ask_food_prefs(cb, state)
 
 
 # ── Шаг 8: Предпочтения по продуктам ─────────────────────────────
@@ -567,6 +638,9 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
     goal_weight = data.get("goal_weight")
     food_prefs = data.get("food_prefs", [])
     cuisine = data.get("cuisine", [])
+    accel_enabled = bool(data.get("accel_enabled", False))
+    exercise_level = data.get("exercise_level")
+    exercise_kcal = int(data.get("exercise_kcal") or 0)
 
     cuisine_labels = [CUISINE_LABELS.get(c, c) for c in cuisine if c != "any"]
     cuisine_text = ", ".join(cuisine_labels) if cuisine_labels else "любая"
@@ -581,7 +655,18 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
         target=data["target"],
     )
 
-    await state.update_data(kbju=result.__dict__)
+    adjusted_calories, accel_delta = _apply_acceleration_strategy(
+        result.calories,
+        exercise_kcal,
+        data["gender"],
+        data["target"],
+    )
+    kbju_data = dict(result.__dict__)
+    kbju_data["calories_base"] = result.calories
+    kbju_data["calories"] = adjusted_calories
+    kbju_data["exercise_kcal"] = exercise_kcal if accel_enabled else 0
+    kbju_data["accel_delta"] = accel_delta if accel_enabled else 0
+    await state.update_data(kbju=kbju_data)
 
     await save_profile(
         user_id=cb.from_user.id,
@@ -593,13 +678,16 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
         target=data["target"],
         restrictions=restrictions,
         soup_pref=True,
-        calories=result.calories,
+        calories=adjusted_calories,
         protein_g=result.protein_g,
         fat_g=result.fat_g,
         carbs_g=result.carbs_g,
         goal_weight=goal_weight,
         food_prefs=food_prefs,
         cuisine=cuisine,
+        accel_enabled=accel_enabled,
+        exercise_level=exercise_level,
+        exercise_kcal=exercise_kcal if accel_enabled else 0,
     )
 
     restr_summary = _format_selected_restrictions(restrictions) if restrictions else "нет"
@@ -623,13 +711,17 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
     if cuisine_labels:
         text += f"  🌍  {', '.join(cuisine_labels)}\n"
 
+    if accel_enabled and data["target"] == "cut":
+        level_title = EXERCISE_LEVELS.get(exercise_level, ("🚶 Активность", exercise_kcal))[0]
+        text += f"  {level_title}: ~{exercise_kcal} ккал/день\n"
+
     text += (
         "\n"
         "╔═══════════════════════╗\n"
         "║  📊  <b>ВАШИ ОРИЕНТИРЫ</b>          ║\n"
         "╠═══════════════════════╣\n"
         "║                                              ║\n"
-        f"║  🔥  <b>{result.calories}</b> ккал                  ║\n"
+        f"║  🔥  <b>{adjusted_calories}</b> ккал                  ║\n"
         "║                                              ║\n"
         f"║  🥩  Белки         <b>{result.protein_g}</b> г         ║\n"
         f"║  🧈  Жиры          <b>{result.fat_g}</b> г         ║\n"
@@ -639,6 +731,12 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
         "\n"
         "<i>Хотите примерное меню на 3 дня?</i>"
     )
+    if accel_enabled and data["target"] == "cut":
+        text += (
+            "\n\n<i>Учтено ускорение (вариант C): "
+            "часть дефицита через активность, "
+            "часть — через умеренную корректировку калорий.</i>"
+        )
 
     await state.set_state(CalcForm.soup_pref)
     await cb.message.answer(text, parse_mode="HTML", reply_markup=kb_soup_pref())
@@ -681,6 +779,15 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
     restrictions_text = _format_selected_restrictions(restrictions) if restrictions else "нет"
     prefs_text = _build_prefs_prompt(food_prefs)
     cuisine_text = _build_cuisine_prompt(data.get("cuisine", []))
+    exercise_kcal = int(data.get("exercise_kcal") or 0)
+    accel_hint = ""
+    if data.get("accel_enabled") and data.get("target") == "cut":
+        level_title = EXERCISE_LEVELS.get(data.get("exercise_level"), ("активность", exercise_kcal))[0]
+        accel_hint = (
+            f"Ускорение включено: {level_title}, расход ~{exercise_kcal} ккал/день. "
+            "Соблюдайте ограничения по здоровью, исключите ударные нагрузки/прыжки при рисках. "
+            "Меню уже скорректировано по калорийности умеренно (вариант C).\n"
+        )
 
     system_prompt = (MENU_SYSTEM_SOUP if wants_soup else MENU_SYSTEM_NO_SOUP).format(
         plan_duration=3,
@@ -691,6 +798,7 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
         f"Пол: {GENDER_LABEL[data['gender']]}, "
         f"возраст {data['age']}, вес {data['weight']} кг.\n"
         f"Ограничения по здоровью: {restrictions_text}.\n"
+        f"{accel_hint}"
         f"{cuisine_text}"
         f"{prefs_text}"
     )
@@ -769,6 +877,9 @@ async def renew_menu(cb: CallbackQuery):
 
     latest_weight = await get_latest_weight(uid)
     current_weight = latest_weight if latest_weight else profile["weight_kg"]
+    accel_enabled = bool(profile.get("accel_enabled", False))
+    exercise_level = profile.get("exercise_level")
+    exercise_kcal = int(profile.get("exercise_kcal") or 0)
 
     if current_weight != profile["weight_kg"]:
         result = compute_kbju(
@@ -779,8 +890,14 @@ async def renew_menu(cb: CallbackQuery):
             activity_level=profile["activity"],
             target=profile["target"],
         )
+        adjusted_calories, _ = _apply_acceleration_strategy(
+            result.calories,
+            exercise_kcal if accel_enabled else 0,
+            profile["gender"],
+            profile["target"],
+        )
         calories, protein_g, fat_g, carbs_g = (
-            result.calories, result.protein_g, result.fat_g, result.carbs_g,
+            adjusted_calories, result.protein_g, result.fat_g, result.carbs_g,
         )
         await save_profile(
             user_id=uid,
@@ -799,6 +916,9 @@ async def renew_menu(cb: CallbackQuery):
             goal_weight=profile.get("goal_weight"),
             food_prefs=profile.get("food_prefs", []),
             cuisine=profile.get("cuisine", []),
+            accel_enabled=accel_enabled,
+            exercise_level=exercise_level,
+            exercise_kcal=exercise_kcal if accel_enabled else 0,
         )
     else:
         calories = profile["calories"]
@@ -813,6 +933,14 @@ async def renew_menu(cb: CallbackQuery):
     cuisine = profile.get("cuisine", [])
     cuisine_text = _build_cuisine_prompt(cuisine if isinstance(cuisine, list) else [])
     wants_soup = profile.get("soup_pref", True)
+    accel_hint = ""
+    if accel_enabled and profile.get("target") == "cut":
+        level_title = EXERCISE_LEVELS.get(exercise_level, ("активность", exercise_kcal))[0]
+        accel_hint = (
+            f"Ускорение включено: {level_title}, расход ~{exercise_kcal} ккал/день. "
+            "Соблюдайте ограничения по здоровью, исключите ударные нагрузки/прыжки при рисках. "
+            "Меню уже скорректировано по калорийности умеренно (вариант C).\n"
+        )
 
     system_prompt = (MENU_SYSTEM_SOUP if wants_soup else MENU_SYSTEM_NO_SOUP).format(
         plan_duration=3,
@@ -824,6 +952,7 @@ async def renew_menu(cb: CallbackQuery):
         f"Пол: {GENDER_LABEL[profile['gender']]}, "
         f"возраст {profile['age']}, вес {current_weight} кг.\n"
         f"Ограничения по здоровью: {restrictions_text}.\n"
+        f"{accel_hint}"
         f"{cuisine_text}"
         f"{prefs_text}\n"
         "ВАЖНО: составьте НОВОЕ меню, с другими блюдами. Разнообразие важно!"
@@ -872,6 +1001,11 @@ async def renew_menu(cb: CallbackQuery):
 
 
 # ── Скачать меню ─────────────────────────────────────────────────
+
+@router.callback_query(F.data == "menu:download_locked")
+async def download_menu_locked(cb: CallbackQuery):
+    await cb.answer("📥 Скачивание меню доступно на тарифе Стандарт и выше", show_alert=True)
+    await cb.message.answer("Выберите действие 👇", reply_markup=await _kb(cb.from_user.id))
 
 def _strip_html(text: str) -> str:
     """Remove HTML tags and decode entities for plain-text export."""
@@ -930,6 +1064,7 @@ async def download_menu(cb: CallbackQuery):
     file_bytes = html.encode("utf-8")
     doc = BufferedInputFile(file_bytes, filename=f"forma_menu_{date_str}.html")
     await cb.message.answer_document(doc, caption="📥 Ваше меню FORMA\n<i>Откройте в браузере</i>", parse_mode="HTML")
+    await cb.message.answer("Возвращаю в главное меню 👇", reply_markup=await _kb(uid))
     await cb.answer()
 
 
@@ -1017,4 +1152,5 @@ async def download_recipe(cb: CallbackQuery, state: FSMContext):
     safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in dish_name)[:40]
     doc = BufferedInputFile(file_bytes, filename=f"forma_recipe_{safe_name}.html")
     await cb.message.answer_document(doc, caption="📥 Рецепт FORMA\n<i>Откройте в браузере</i>", parse_mode="HTML")
+    await cb.message.answer("Возвращаю в главное меню 👇", reply_markup=await _kb(uid))
     await cb.answer()
