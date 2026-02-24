@@ -839,6 +839,7 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
             markup = kb if i == len(chunks) - 1 else None
             await cb.message.answer(chunk, reply_markup=markup)
     await cb.message.answer("Что дальше?", reply_markup=kb)
+    await cb.message.answer("Или выберите действие из главного меню 👇", reply_markup=await _kb(cb.from_user.id))
 
 
 @router.callback_query(CalcForm.menu_confirm, F.data == "menu:no")
@@ -1019,6 +1020,7 @@ async def renew_menu(cb: CallbackQuery):
             markup = kb if i == len(chunks) - 1 else None
             await cb.message.answer(chunk, parse_mode=pm, reply_markup=markup)
     await cb.message.answer("Что дальше?", reply_markup=kb)
+    await cb.message.answer("Или выберите действие из главного меню 👇", reply_markup=await _kb(uid))
 
 
 # ── Скачать меню ─────────────────────────────────────────────────

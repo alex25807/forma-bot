@@ -48,12 +48,12 @@ PLAN_INFO = {
 async def choose_plan(cb: CallbackQuery):
     uid = cb.from_user.id
 
-    if await is_whitelisted(uid):
-        await cb.answer("Вы VIP — все функции уже доступны!", show_alert=True)
-        return
-
     plan = await get_user_plan(uid)
-    if plan != "free":
+    is_admin = bool(settings.ADMIN_ID and uid == settings.ADMIN_ID)
+    is_vip = await is_whitelisted(uid)
+    test_mode = is_admin or is_vip
+
+    if plan != "free" and not test_mode:
         sub = await get_subscription(uid)
         exp = sub["expires_at"][:10] if sub and sub.get("expires_at") else "∞"
         await cb.answer(f"У вас тариф «{plan}» до {exp}", show_alert=True)
@@ -66,10 +66,19 @@ async def choose_plan(cb: CallbackQuery):
         )
         return
 
-    await cb.message.answer(
+    header = (
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "   💎 <b>Тарифы FORMA</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    )
+    test_hint = (
+        "🧪 <b>Режим теста оплаты</b>\n"
+        "У вас VIP/админ-доступ, поэтому покупка нужна только\n"
+        "для проверки сценария выставления счёта и оплаты.\n\n"
+    ) if test_mode else ""
+
+    await cb.message.answer(
+        header + test_hint +
         "🔹 <b>Стандарт — 299 ₽/мес</b>\n"
         "  ✅ Безлимитные меню на 3 дня\n"
         "  ✅ Выбор кухни (7+ вариантов)\n"
