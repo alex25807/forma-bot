@@ -337,6 +337,8 @@ def kb_after_recipe(has_premium: bool = False):
     ]
     if has_premium:
         rows.append([InlineKeyboardButton(text="📥 Скачать рецепт", callback_data="recipe:download")])
+    else:
+        rows.append([InlineKeyboardButton(text="🔒 Скачать рецепт (подписка)", callback_data="recipe:download_locked")])
     rows.append([InlineKeyboardButton(text="↩️ В главное меню", callback_data="back:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
