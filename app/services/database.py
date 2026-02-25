@@ -2,7 +2,7 @@ import asyncio
 import json
 import sqlite3
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from functools import partial
 from pathlib import Path
 
@@ -127,6 +127,14 @@ def init_db():
             user_id      INTEGER NOT NULL,
             exercises    TEXT NOT NULL,
             completed    INTEGER DEFAULT 0,
+            created_at   TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS growth_events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            event        TEXT NOT NULL,
+            meta         TEXT,
             created_at   TEXT NOT NULL
         );
     """)
@@ -738,9 +746,94 @@ def delete_user_data(user_id: int):
     conn = _conn()
     for table in ("profiles", "weight_log", "daily_log", "menu_log",
                   "subscribers", "subscriptions", "whitelist", "reviews",
-                  "consent", "api_usage", "fitness_log"):
+                  "consent", "api_usage", "fitness_log", "growth_events"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     conn.close()
+
+
+# ── Growth events ─────────────────────────────────────────────────
+
+def log_growth_event(user_id: int, event: str, meta: dict | None = None):
+    conn = _conn()
+    conn.execute(
+        """INSERT INTO growth_events (user_id, event, meta, created_at)
+           VALUES (?, ?, ?, ?)""",
+        (
+            user_id,
+            event,
+            json.dumps(meta or {}, ensure_ascii=False),
+            datetime.now().isoformat(),
+        ),
+    )
+    conn.close()
+
+
+def get_growth_funnel(days: int = 7) -> dict:
+    since = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = _conn()
+    rows = conn.execute(
+        """
+        SELECT event, COUNT(*) as cnt
+        FROM growth_events
+        WHERE created_at >= ?
+        GROUP BY event
+        """,
+        (since,),
+    ).fetchall()
+    conn.close()
+    counts = {event: cnt for event, cnt in rows}
+    return {
+        "days": days,
+        "counts": counts,
+        "start_users": counts.get("start", 0),
+        "calc_done": counts.get("calc_done", 0),
+        "menu_done": counts.get("menu_done", 0),
+        "pay_open": counts.get("pay_open", 0),
+        "invoice_open": counts.get("invoice_open", 0),
+        "pay_success": counts.get("pay_success", 0),
+    }
+
+
+def get_d1_reactivation_candidates(limit: int = 200) -> list[int]:
+    """
+    Users who got menu 24-36h ago and have no daily activity in last 24h.
+    Filter to effective free users to avoid paid-user spam.
+    """
+    now = datetime.now()
+    from_ts = (now - timedelta(hours=36)).isoformat()
+    to_ts = (now - timedelta(hours=24)).isoformat()
+    last_day = (now - timedelta(hours=24)).isoformat()
+
+    conn = _conn()
+    rows = conn.execute(
+        """
+        SELECT m.user_id
+        FROM menu_log m
+        INNER JOIN (
+            SELECT user_id, MAX(created_at) as max_created
+            FROM menu_log
+            GROUP BY user_id
+        ) x ON x.user_id = m.user_id AND x.max_created = m.created_at
+        WHERE m.created_at BETWEEN ? AND ?
+          AND NOT EXISTS (
+              SELECT 1 FROM daily_log d
+              WHERE d.user_id = m.user_id
+                AND d.logged_at >= ?
+          )
+        ORDER BY m.created_at DESC
+        LIMIT ?
+        """,
+        (from_ts, to_ts, last_day, limit * 2),
+    ).fetchall()
+    conn.close()
+
+    result: list[int] = []
+    for (uid,) in rows:
+        if get_user_plan(uid) == "free":
+            result.append(uid)
+            if len(result) >= limit:
+                break
+    return result
 
 
 # ── Init on import ────────────────────────────────────────────────
@@ -877,3 +970,15 @@ async def a_get_fitness_stats(user_id):
 
 async def a_get_today_fitness(user_id):
     return await arun(get_today_fitness, user_id)
+
+
+async def a_log_growth_event(user_id, event, meta=None):
+    return await arun(log_growth_event, user_id, event, meta)
+
+
+async def a_get_growth_funnel(days=7):
+    return await arun(get_growth_funnel, days)
+
+
+async def a_get_d1_reactivation_candidates(limit=200):
+    return await arun(get_d1_reactivation_candidates, limit)

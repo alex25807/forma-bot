@@ -16,6 +16,9 @@ from app.services.database import (
     a_get_review_count as get_review_count,
     a_delete_user_data as delete_user_data,
     a_get_api_stats as get_api_stats,
+    a_get_growth_funnel as get_growth_funnel,
+    a_get_d1_reactivation_candidates as get_d1_reactivation_candidates,
+    a_log_growth_event as log_growth_event,
     _conn,
 )
 
@@ -230,6 +233,74 @@ async def show_stats(m: Message):
         f"  Расход: ${s['today_cost']:.4f}\n"
     )
     await m.answer(text, parse_mode="HTML")
+
+
+@router.message(Command("growth"))
+async def show_growth(m: Message):
+    if not _is_admin(m.from_user.id):
+        await m.answer("⛔ Эта команда доступна только администратору.")
+        return
+
+    f = await get_growth_funnel(7)
+    c = f.get("counts", {})
+
+    start_cnt = c.get("start", 0)
+    calc_cnt = c.get("calc_done", 0)
+    menu_cnt = c.get("menu_done", 0)
+    pay_open_cnt = c.get("pay_open", 0)
+    invoice_cnt = c.get("invoice_open", 0)
+    paid_cnt = c.get("pay_success", 0)
+
+    calc_cr = (calc_cnt / start_cnt * 100) if start_cnt else 0.0
+    menu_cr = (menu_cnt / calc_cnt * 100) if calc_cnt else 0.0
+    paid_cr = (paid_cnt / pay_open_cnt * 100) if pay_open_cnt else 0.0
+
+    text = (
+        "📈 <b>Growth Funnel (7 дней)</b>\n\n"
+        f"start: <b>{start_cnt}</b>\n"
+        f"calc_done: <b>{calc_cnt}</b> ({calc_cr:.1f}%)\n"
+        f"menu_done: <b>{menu_cnt}</b> ({menu_cr:.1f}%)\n"
+        f"pay_open: <b>{pay_open_cnt}</b>\n"
+        f"invoice_open: <b>{invoice_cnt}</b>\n"
+        f"pay_success: <b>{paid_cnt}</b> ({paid_cr:.1f}%)\n\n"
+        f"recipe_open: {c.get('recipe_open', 0)}\n"
+        f"download_click: {c.get('download_click', 0)}\n"
+    )
+    await m.answer(text, parse_mode="HTML")
+
+
+@router.message(Command("reactivate_d1"))
+async def reactivate_d1(m: Message):
+    if not _is_admin(m.from_user.id):
+        await m.answer("⛔ Эта команда доступна только администратору.")
+        return
+
+    uids = await get_d1_reactivation_candidates(limit=200)
+    if not uids:
+        await m.answer("Кандидатов для D1-реактивации не найдено.")
+        return
+
+    sent = 0
+    failed = 0
+    text = (
+        "👋 Небольшое напоминание от FORMA\n\n"
+        "Если хотите — продолжим мягко и без стресса.\n"
+        "Нажмите «🏠 Старт» и я подскажу следующий шаг."
+    )
+    for uid in uids:
+        try:
+            await m.bot.send_message(uid, text)
+            await log_growth_event(uid, "d1_reactivation_sent")
+            sent += 1
+        except Exception:
+            failed += 1
+
+    await m.answer(
+        f"✅ D1-реактивация завершена.\n"
+        f"Отправлено: <b>{sent}</b>\n"
+        f"Ошибок: <b>{failed}</b>",
+        parse_mode="HTML",
+    )
 
 
 # ── /reviews — админ просматривает отзывы ────────────────────────

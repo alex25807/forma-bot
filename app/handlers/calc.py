@@ -26,6 +26,8 @@ from app.keyboards import (
     kb_accelerate_level,
     kb_after_menu,
     kb_start,
+    kb_post_menu_upsell,
+    kb_locked_offer,
     RESTRICTION_LABELS,
     FOOD_PREF_LABELS,
 )
@@ -43,6 +45,7 @@ from app.services.database import (
     a_get_last_menu as get_last_menu,
     a_has_standard_access as has_standard_access,
     a_get_user_plan as get_user_plan,
+    a_log_growth_event as log_growth_event,
 )
 from app.prompts import MENU_SYSTEM_SOUP, MENU_SYSTEM_NO_SOUP, RECIPE_SYSTEM
 
@@ -690,6 +693,7 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
         exercise_level=exercise_level,
         exercise_kcal=exercise_kcal if accel_enabled else 0,
     )
+    await log_growth_event(cb.from_user.id, "calc_done", {"target": data["target"]})
 
     restr_summary = _format_selected_restrictions(restrictions) if restrictions else "нет"
     gender_icon = "👨" if data["gender"] == "male" else "👩"
@@ -817,6 +821,15 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
         kbju["carbs_g"],
         menu_text,
     )
+    await log_growth_event(
+        cb.from_user.id,
+        "menu_done",
+        {
+            "source": "new",
+            "calories": kbju["calories"],
+            "has_accel": bool(data.get("accel_enabled")),
+        },
+    )
 
     await wait_msg.delete()
 
@@ -834,6 +847,13 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
         for chunk in chunks:
             await cb.message.answer(chunk)
     await cb.message.answer("✅ Меню готово. Что дальше?", reply_markup=kb)
+    if not standard:
+        await cb.message.answer(
+            "💡 Хотите больше гибкости?\n"
+            "В «Стандарте» доступны скачивание меню/рецептов,\n"
+            "обновление меню и расширенные функции.",
+            reply_markup=kb_post_menu_upsell(),
+        )
 
 
 @router.callback_query(CalcForm.menu_confirm, F.data == "menu:no")
@@ -970,6 +990,7 @@ async def renew_menu(cb: CallbackQuery):
     )
 
     await save_menu(uid, calories, protein_g, fat_g, carbs_g, menu_text)
+    await log_growth_event(uid, "menu_done", {"source": "renew", "calories": calories})
 
     await wait_msg.delete()
 
@@ -1015,8 +1036,13 @@ async def renew_menu(cb: CallbackQuery):
 
 @router.callback_query(F.data == "menu:download_locked")
 async def download_menu_locked(cb: CallbackQuery):
-    await cb.answer("📥 Скачивание меню доступно на тарифе Стандарт и выше", show_alert=True)
-    await cb.message.answer("Выберите действие 👇", reply_markup=await _kb(cb.from_user.id))
+    await log_growth_event(cb.from_user.id, "download_click", {"type": "menu", "locked": True})
+    await cb.answer()
+    await cb.message.answer(
+        "🔒 Скачивание меню доступно на тарифе «Стандарт» и выше.\n"
+        "Откройте тарифы, чтобы подключить доступ.",
+        reply_markup=kb_locked_offer(),
+    )
 
 def _strip_html(text: str) -> str:
     """Remove HTML tags and decode entities for plain-text export."""
@@ -1053,6 +1079,7 @@ def _make_html_doc(title: str, header_info: str, body_html: str) -> str:
 @router.callback_query(F.data == "menu:download")
 async def download_menu(cb: CallbackQuery):
     uid = cb.from_user.id
+    await log_growth_event(uid, "download_click", {"type": "menu", "locked": False})
     standard = await has_standard_access(uid)
     if not standard:
         await cb.answer("📥 Скачивание доступно по подписке / VIP", show_alert=True)
@@ -1083,6 +1110,7 @@ async def download_menu(cb: CallbackQuery):
 
 @router.callback_query(F.data == "menu:recipe")
 async def ask_recipe(cb: CallbackQuery, state: FSMContext):
+    await log_growth_event(cb.from_user.id, "recipe_open")
     await state.set_state(RecipeForm.dish_name)
     await cb.message.answer(
         "👨‍🍳 <b>Рецепт блюда</b>\n\n"
@@ -1141,6 +1169,7 @@ async def generate_recipe(m: Message, state: FSMContext):
 @router.callback_query(F.data == "recipe:download")
 async def download_recipe(cb: CallbackQuery, state: FSMContext):
     uid = cb.from_user.id
+    await log_growth_event(uid, "download_click", {"type": "recipe", "locked": False})
     standard = await has_standard_access(uid)
     if not standard:
         await cb.answer("📥 Скачивание доступно по подписке", show_alert=True)
@@ -1169,5 +1198,16 @@ async def download_recipe(cb: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "recipe:download_locked")
 async def download_recipe_locked(cb: CallbackQuery):
-    await cb.answer("📥 Скачивание рецепта доступно на тарифе Стандарт и выше", show_alert=True)
-    await cb.message.answer("Выберите действие 👇", reply_markup=await _kb(cb.from_user.id))
+    await log_growth_event(cb.from_user.id, "download_click", {"type": "recipe", "locked": True})
+    await cb.answer()
+    await cb.message.answer(
+        "🔒 Скачивание рецепта доступно на тарифе «Стандарт» и выше.\n"
+        "Откройте тарифы, чтобы подключить доступ.",
+        reply_markup=kb_locked_offer(),
+    )
+
+
+@router.callback_query(F.data == "upsell:later")
+async def upsell_later(cb: CallbackQuery):
+    await log_growth_event(cb.from_user.id, "upsell_later")
+    await cb.answer("Хорошо, можно вернуться позже 👍")

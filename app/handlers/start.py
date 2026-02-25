@@ -13,6 +13,7 @@ from app.services.database import (
     a_has_consent as has_consent,
     a_save_consent as save_consent,
     a_get_user_plan as get_user_plan,
+    a_log_growth_event as log_growth_event,
 )
 
 router = Router()
@@ -106,6 +107,7 @@ PRIVACY_POLICY = (
 
 @router.message(CommandStart())
 async def start(m: Message):
+    await log_growth_event(m.from_user.id, "start", {"source": "command"})
     if not await has_consent(m.from_user.id):
         await m.answer("⬇️ Быстрый доступ к меню включён.", reply_markup=kb_quick_start())
         await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
@@ -116,6 +118,7 @@ async def start(m: Message):
 
 @router.message(F.text == "🏠 Старт")
 async def quick_start(m: Message):
+    await log_growth_event(m.from_user.id, "start", {"source": "quick_button"})
     if not await has_consent(m.from_user.id):
         await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
         return
@@ -139,6 +142,7 @@ async def accept_consent(cb: CallbackQuery):
 
 @router.callback_query(F.data == "main:info")
 async def how_it_works(cb: CallbackQuery):
+    await log_growth_event(cb.from_user.id, "info_open")
     text = (
         "📌 <b>Как работает FORMA</b>\n\n"
         "  📊  Рассчитываем ваш ориентир\n"

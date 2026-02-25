@@ -15,6 +15,7 @@ from app.services.database import (
     a_get_subscription as get_subscription,
     a_get_user_plan as get_user_plan,
     a_is_whitelisted as is_whitelisted,
+    a_log_growth_event as log_growth_event,
 )
 from app.keyboards import kb_payment_plans
 
@@ -58,6 +59,8 @@ async def choose_plan(cb: CallbackQuery):
         exp = sub["expires_at"][:10] if sub and sub.get("expires_at") else "∞"
         await cb.answer(f"У вас тариф «{plan}» до {exp}", show_alert=True)
         return
+
+    await log_growth_event(uid, "pay_open", {"test_mode": test_mode, "plan": plan})
 
     if not settings.PAYMENT_PROVIDER_TOKEN:
         await cb.answer(
@@ -111,6 +114,8 @@ async def send_invoice(cb: CallbackQuery):
         await cb.answer("Оплата временно недоступна", show_alert=True)
         return
 
+    await log_growth_event(cb.from_user.id, "invoice_open", {"plan": plan_key})
+
     prices = [LabeledPrice(label=info["title"], amount=info["price"])]
 
     await cb.message.answer_invoice(
@@ -144,6 +149,15 @@ async def process_payment(m: Message):
 
     expires = (datetime.now() + timedelta(days=days)).isoformat()
     await save_subscription(uid, plan_key, expires)
+    await log_growth_event(
+        uid,
+        "pay_success",
+        {
+            "plan": plan_key,
+            "amount": m.successful_payment.total_amount,
+            "currency": m.successful_payment.currency,
+        },
+    )
 
     plan_label = "Стандарт" if plan_key == "standard" else "Премиум"
     await m.answer(

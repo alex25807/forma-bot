@@ -400,4 +400,18 @@ def kb_payment_plans():
     ])
 
 
+def kb_post_menu_upsell():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💎 Открыть тарифы", callback_data="pay:choose")],
+        [InlineKeyboardButton(text="Позже", callback_data="upsell:later")],
+    ])
+
+
+def kb_locked_offer():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💎 Открыть тарифы", callback_data="pay:choose")],
+        [InlineKeyboardButton(text="↩️ Назад в меню", callback_data="back:menu")],
+    ])
+
+
 remove_kb = ReplyKeyboardRemove()
