@@ -19,6 +19,20 @@ def _conn():
     return conn
 
 
+def _ensure_growth_events_table(conn: sqlite3.Connection):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS growth_events (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            event        TEXT NOT NULL,
+            meta         TEXT,
+            created_at   TEXT NOT NULL
+        )
+        """
+    )
+
+
 def init_db():
     conn = _conn()
     conn.executescript("""
@@ -755,31 +769,54 @@ def delete_user_data(user_id: int):
 
 def log_growth_event(user_id: int, event: str, meta: dict | None = None):
     conn = _conn()
-    conn.execute(
-        """INSERT INTO growth_events (user_id, event, meta, created_at)
-           VALUES (?, ?, ?, ?)""",
-        (
-            user_id,
-            event,
-            json.dumps(meta or {}, ensure_ascii=False),
-            datetime.now().isoformat(),
-        ),
-    )
+    try:
+        conn.execute(
+            """INSERT INTO growth_events (user_id, event, meta, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (
+                user_id,
+                event,
+                json.dumps(meta or {}, ensure_ascii=False),
+                datetime.now().isoformat(),
+            ),
+        )
+    except sqlite3.OperationalError as e:
+        if "no such table: growth_events" in str(e).lower():
+            _ensure_growth_events_table(conn)
+            conn.execute(
+                """INSERT INTO growth_events (user_id, event, meta, created_at)
+                   VALUES (?, ?, ?, ?)""",
+                (
+                    user_id,
+                    event,
+                    json.dumps(meta or {}, ensure_ascii=False),
+                    datetime.now().isoformat(),
+                ),
+            )
+        else:
+            raise
     conn.close()
 
 
 def get_growth_funnel(days: int = 7) -> dict:
     since = (datetime.now() - timedelta(days=days)).isoformat()
     conn = _conn()
-    rows = conn.execute(
-        """
-        SELECT event, COUNT(*) as cnt
-        FROM growth_events
-        WHERE created_at >= ?
-        GROUP BY event
-        """,
-        (since,),
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            """
+            SELECT event, COUNT(*) as cnt
+            FROM growth_events
+            WHERE created_at >= ?
+            GROUP BY event
+            """,
+            (since,),
+        ).fetchall()
+    except sqlite3.OperationalError as e:
+        if "no such table: growth_events" in str(e).lower():
+            _ensure_growth_events_table(conn)
+            rows = []
+        else:
+            raise
     conn.close()
     counts = {event: cnt for event, cnt in rows}
     return {
