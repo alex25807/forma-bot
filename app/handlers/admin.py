@@ -31,6 +31,12 @@ def _is_admin(user_id: int) -> bool:
     return settings.ADMIN_ID != 0 and user_id == settings.ADMIN_ID
 
 
+async def _can_use_growth(user_id: int) -> bool:
+    if _is_admin(user_id):
+        return True
+    return await is_whitelisted(user_id)
+
+
 # ── /myid — любой пользователь узнаёт свой ID ───────────────────
 
 @router.message(Command("myid"))
@@ -237,11 +243,16 @@ async def show_stats(m: Message):
 
 @router.message(Command("growth"))
 async def show_growth(m: Message):
-    if not _is_admin(m.from_user.id):
+    if not await _can_use_growth(m.from_user.id):
         await m.answer("⛔ Эта команда доступна только администратору.")
         return
 
-    f = await get_growth_funnel(7)
+    try:
+        f = await get_growth_funnel(7)
+    except Exception as e:
+        logger.exception("Growth command failed: %s", e)
+        await m.answer("⚠️ Не удалось собрать growth-отчёт. Попробуйте ещё раз через минуту.")
+        return
     c = f.get("counts", {})
 
     start_cnt = c.get("start", 0)
@@ -271,7 +282,7 @@ async def show_growth(m: Message):
 
 @router.message(Command("reactivate_d1"))
 async def reactivate_d1(m: Message):
-    if not _is_admin(m.from_user.id):
+    if not await _can_use_growth(m.from_user.id):
         await m.answer("⛔ Эта команда доступна только администратору.")
         return
 
