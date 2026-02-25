@@ -280,6 +280,12 @@ async def show_growth(m: Message):
     await m.answer(text, parse_mode="HTML")
 
 
+@router.message(F.text.regexp(r"^/growth(@\w+)?$"))
+async def show_growth_fallback(m: Message):
+    # Fallback for cases when Telegram sends command as plain text variant.
+    await show_growth(m)
+
+
 @router.message(Command("reactivate_d1"))
 async def reactivate_d1(m: Message):
     if not await _can_use_growth(m.from_user.id):
