@@ -143,6 +143,7 @@ def kb_target():
 def kb_goal_weight_skip():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⏩ Пропустить", callback_data="goal:skip")],
+        [InlineKeyboardButton(text="✏️ Исправить данные", callback_data="calc:edit_restart")],
         [InlineKeyboardButton(text="✕ Отмена", callback_data="calc:cancel")],
     ])
 
@@ -352,6 +353,7 @@ def kb_after_recipe(has_premium: bool = False):
 
 def kb_cancel_inline():
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Исправить данные", callback_data="calc:edit_restart")],
         [InlineKeyboardButton(text="✕ Отмена", callback_data="calc:cancel")],
     ])
 

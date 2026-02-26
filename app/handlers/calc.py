@@ -26,6 +26,7 @@ from app.keyboards import (
     kb_accelerate_level,
     kb_after_menu,
     kb_start,
+    kb_cancel_inline,
     kb_post_menu_upsell,
     kb_locked_offer,
     RESTRICTION_LABELS,
@@ -247,6 +248,7 @@ async def set_gender(cb: CallbackQuery, state: FSMContext):
     await cb.message.answer(
         "Укажите <b>рост</b> в см\n<i>например: 175</i>",
         parse_mode="HTML",
+        reply_markup=kb_cancel_inline(),
     )
     await cb.answer()
 
@@ -267,6 +269,7 @@ async def set_height(m: Message, state: FSMContext):
     await m.answer(
         "Укажите <b>вес</b> в кг\n<i>например: 70</i>",
         parse_mode="HTML",
+        reply_markup=kb_cancel_inline(),
     )
 
 
@@ -286,6 +289,7 @@ async def set_weight(m: Message, state: FSMContext):
     await m.answer(
         "Укажите <b>возраст</b> (полных лет)\n<i>например: 30</i>",
         parse_mode="HTML",
+        reply_markup=kb_cancel_inline(),
     )
 
 
