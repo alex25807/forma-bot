@@ -155,6 +155,21 @@ async def cancel(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
 
 
+@router.callback_query(F.data == "calc:edit_restart")
+async def edit_restart(cb: CallbackQuery, state: FSMContext):
+    """Restart profile questionnaire to quickly correct input mistakes."""
+    await state.clear()
+    await state.set_state(CalcForm.gender)
+    await cb.message.edit_text(
+        "📊 <b>Исправление данных</b>\n\n"
+        "Давайте быстро введём анкету заново.\n"
+        "Укажите ваш пол:",
+        parse_mode="HTML",
+        reply_markup=kb_gender(),
+    )
+    await cb.answer()
+
+
 # ── Шаг 1: Пол ───────────────────────────────────────────────────
 
 @router.callback_query(F.data == "main:calc")

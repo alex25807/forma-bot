@@ -284,6 +284,7 @@ def kb_soup_pref():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🥣 Да, с супами", callback_data="soup:yes")],
         [InlineKeyboardButton(text="🚫 Нет, без супов", callback_data="soup:no")],
+        [InlineKeyboardButton(text="✏️ Исправить данные", callback_data="calc:edit_restart")],
     ])
 
 
@@ -292,6 +293,7 @@ def kb_soup_pref():
 def kb_menu_confirm():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📋 Составить меню на 3 дня", callback_data="menu:yes")],
+        [InlineKeyboardButton(text="✏️ Исправить данные", callback_data="calc:edit_restart")],
         [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="menu:no")],
     ])
 
