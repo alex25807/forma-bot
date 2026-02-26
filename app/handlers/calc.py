@@ -86,6 +86,23 @@ EXERCISE_LEVELS = {
     "active": ("💪 Уверенно", 220),
 }
 
+PREF_KEYWORDS = {
+    "meat": ["говя", "свин", "теля", "барани", "мясо"],
+    "poultry": ["кур", "индей", "утк", "птиц"],
+    "fish": ["рыб", "лосос", "тунец", "треск", "хек", "скумбр", "семг"],
+    "potato": ["картоф", "пюре"],
+    "pasta": ["макарон", "паста", "спагет", "фетуч", "пенне", "лапш"],
+    "cereals": ["греч", "рис", "овся", "булгур", "перлов", "пшен", "киноа"],
+    "vegs": ["овощ", "салат", "огур", "помид", "кабач", "брокколи", "морков"],
+    "fruits": ["фрукт", "яблок", "банан", "груш", "ягод", "апельсин", "киви"],
+    "coffee": ["кофе", "латте", "капуч", "эспрессо"],
+    "tea": ["чай", "улун", "пуэр", "зеленый чай", "черный чай"],
+    "compot": ["компот", "сок", "морс"],
+    "kefir": ["кефир", "ряженк"],
+    "tvorog": ["творог", "йогурт", "сырок"],
+    "milk": ["молок", "какао"],
+}
+
 
 def _apply_acceleration_strategy(
     base_calories: int,
@@ -124,6 +141,41 @@ def _build_prefs_prompt(food_prefs: list[str]) -> str:
         "Предпочтения по продуктам (ОБЯЗАТЕЛЬНО учитывать — "
         "включать эти продукты в меню приоритетно): " + ", ".join(labels) + "."
     )
+
+
+def _build_prefs_exclusion_prompt(food_prefs: list[str]) -> str:
+    """Build an exclusion guard: avoid non-selected predefined product groups."""
+    if not food_prefs or food_prefs == ["all"]:
+        return ""
+    selected_keys = [p for p in food_prefs if p in FOOD_PREF_LABELS]
+    if not selected_keys:
+        return ""
+    excluded = [k for k in FOOD_PREF_LABELS.keys() if k not in selected_keys]
+    if not excluded:
+        return ""
+    excluded_labels = [FOOD_PREF_LABELS[k].split(" ", 1)[1] for k in excluded]
+    return (
+        "СТРОГОЕ ПРАВИЛО: не включайте в меню продукты из невыбранных групп: "
+        + ", ".join(excluded_labels)
+        + ". Исключения допустимы только для минимального количества базовых ингредиентов/приправ."
+    )
+
+
+def _detect_disallowed_groups(menu_text: str, food_prefs: list[str]) -> list[str]:
+    """Detect non-selected predefined groups in generated menu text."""
+    if not food_prefs or food_prefs == ["all"]:
+        return []
+    selected_keys = {p for p in food_prefs if p in FOOD_PREF_LABELS}
+    if not selected_keys:
+        return []
+    text = menu_text.lower()
+    bad: list[str] = []
+    for key, keywords in PREF_KEYWORDS.items():
+        if key in selected_keys:
+            continue
+        if any(word in text for word in keywords):
+            bad.append(key)
+    return bad
 
 
 def _format_selected_restrictions(selected: list[str]) -> str:
@@ -476,6 +528,8 @@ async def _ask_food_prefs(cb: CallbackQuery, state: FSMContext):
         "Выберите, что вы любите и хотите\n"
         "видеть в меню. Нажимайте на кнопки —\n"
         "выбранные отметятся ✅\n\n"
+        "Невыбранные группы я постараюсь\n"
+        "не включать в меню.\n\n"
         "Или нажмите <b>«Всё подходит»</b>.",
         parse_mode="HTML",
         reply_markup=kb_food_prefs(),
@@ -798,6 +852,7 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
 
     restrictions_text = _format_selected_restrictions(restrictions) if restrictions else "нет"
     prefs_text = _build_prefs_prompt(food_prefs)
+    prefs_excl_text = _build_prefs_exclusion_prompt(food_prefs)
     cuisine_text = _build_cuisine_prompt(data.get("cuisine", []))
     exercise_kcal = int(data.get("exercise_kcal") or 0)
     accel_hint = ""
@@ -820,13 +875,29 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
         f"Ограничения по здоровью: {restrictions_text}.\n"
         f"{accel_hint}"
         f"{cuisine_text}"
-        f"{prefs_text}"
+        f"{prefs_text}\n"
+        f"{prefs_excl_text}"
     )
 
     menu_text = await chat_completion(
         system=system_prompt, user=user_prompt,
         user_id=cb.from_user.id, action="menu_generate",
     )
+    bad_groups = _detect_disallowed_groups(menu_text, food_prefs)
+    if bad_groups:
+        bad_labels = ", ".join(FOOD_PREF_LABELS[g].split(" ", 1)[1] for g in bad_groups)
+        retry_prompt = (
+            user_prompt
+            + "\n\n"
+            + f"ПРЕДЫДУЩИЙ ВАРИАНТ нарушил ограничения по продуктам: {bad_labels}.\n"
+            + "Сгенерируйте НОВОЕ меню заново и исключите эти группы."
+        )
+        menu_text = await chat_completion(
+            system=system_prompt,
+            user=retry_prompt,
+            user_id=cb.from_user.id,
+            action="menu_generate_retry",
+        )
 
     await save_menu(
         cb.from_user.id,
@@ -971,6 +1042,7 @@ async def renew_menu(cb: CallbackQuery):
     restrictions_text = _format_selected_restrictions(restrictions) if restrictions else "нет"
     food_prefs = profile.get("food_prefs", [])
     prefs_text = _build_prefs_prompt(food_prefs)
+    prefs_excl_text = _build_prefs_exclusion_prompt(food_prefs)
     cuisine = profile.get("cuisine", [])
     cuisine_text = _build_cuisine_prompt(cuisine if isinstance(cuisine, list) else [])
     wants_soup = profile.get("soup_pref", True)
@@ -996,6 +1068,7 @@ async def renew_menu(cb: CallbackQuery):
         f"{accel_hint}"
         f"{cuisine_text}"
         f"{prefs_text}\n"
+        f"{prefs_excl_text}\n"
         "ВАЖНО: составьте НОВОЕ меню, с другими блюдами. Разнообразие важно!"
     )
 
@@ -1003,6 +1076,21 @@ async def renew_menu(cb: CallbackQuery):
         system=system_prompt, user=user_prompt,
         user_id=uid, action="menu_renew",
     )
+    bad_groups = _detect_disallowed_groups(menu_text, food_prefs)
+    if bad_groups:
+        bad_labels = ", ".join(FOOD_PREF_LABELS[g].split(" ", 1)[1] for g in bad_groups)
+        retry_prompt = (
+            user_prompt
+            + "\n\n"
+            + f"ПРЕДЫДУЩИЙ ВАРИАНТ нарушил ограничения по продуктам: {bad_labels}.\n"
+            + "Сгенерируйте НОВОЕ меню заново и исключите эти группы."
+        )
+        menu_text = await chat_completion(
+            system=system_prompt,
+            user=retry_prompt,
+            user_id=uid,
+            action="menu_renew_retry",
+        )
 
     await save_menu(uid, calories, protein_g, fat_g, carbs_g, menu_text)
     await log_growth_event(uid, "menu_done", {"source": "renew", "calories": calories})
