@@ -2,20 +2,17 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 
-from app.config import settings
 from app.keyboards import kb_start, kb_consent, kb_quick_start
 from app.services.database import (
     a_add_subscriber as add_subscriber,
     a_is_subscribed as is_subscribed,
     a_get_profile as get_profile,
-    a_is_whitelisted as is_whitelisted,
     a_get_menu_count as get_menu_count,
     a_days_since_last_menu as days_since_last_menu,
     a_has_consent as has_consent,
     a_save_consent as save_consent,
     a_get_user_plan as get_user_plan,
     a_log_growth_event as log_growth_event,
-    a_get_growth_funnel as get_growth_funnel,
 )
 
 router = Router()
@@ -295,42 +292,3 @@ async def subscribed_info(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.message(F.text.regexp(r"^/growth(@\w+)?$"))
-async def growth_fallback_in_start(m: Message):
-    """Safety fallback: serve growth even if admin router command filter misses."""
-    is_admin = bool(settings.ADMIN_ID and m.from_user.id == settings.ADMIN_ID)
-    is_vip = await is_whitelisted(m.from_user.id)
-    if not (is_admin or is_vip):
-        await m.answer("⛔ Эта команда доступна только администратору.")
-        return
-
-    try:
-        f = await get_growth_funnel(7)
-    except Exception:
-        await m.answer("⚠️ Growth-отчёт временно недоступен. Попробуйте позже.")
-        return
-
-    c = f.get("counts", {})
-    start_cnt = c.get("start", 0)
-    calc_cnt = c.get("calc_done", 0)
-    menu_cnt = c.get("menu_done", 0)
-    pay_open_cnt = c.get("pay_open", 0)
-    invoice_cnt = c.get("invoice_open", 0)
-    paid_cnt = c.get("pay_success", 0)
-
-    calc_cr = (calc_cnt / start_cnt * 100) if start_cnt else 0.0
-    menu_cr = (menu_cnt / calc_cnt * 100) if calc_cnt else 0.0
-    paid_cr = (paid_cnt / pay_open_cnt * 100) if pay_open_cnt else 0.0
-
-    text = (
-        "📈 <b>Growth Funnel (7 дней)</b>\n\n"
-        f"start: <b>{start_cnt}</b>\n"
-        f"calc_done: <b>{calc_cnt}</b> ({calc_cr:.1f}%)\n"
-        f"menu_done: <b>{menu_cnt}</b> ({menu_cr:.1f}%)\n"
-        f"pay_open: <b>{pay_open_cnt}</b>\n"
-        f"invoice_open: <b>{invoice_cnt}</b>\n"
-        f"pay_success: <b>{paid_cnt}</b> ({paid_cr:.1f}%)\n\n"
-        f"recipe_open: {c.get('recipe_open', 0)}\n"
-        f"download_click: {c.get('download_click', 0)}\n"
-    )
-    await m.answer(text, parse_mode="HTML")

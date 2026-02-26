@@ -38,7 +38,7 @@ class ConsentMiddleware(BaseMiddleware):
                 return await handler(event, data)
 
         if isinstance(event, Message) and event.text:
-            cmd = event.text.split()[0].lower()
+            cmd = event.text.split()[0].lower().split("@", 1)[0]
             if cmd in ALLOWED_COMMANDS:
                 return await handler(event, data)
 

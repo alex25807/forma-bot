@@ -6,7 +6,15 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 
-from app.states import CalcForm, RecipeForm
+from app.states import (
+    CalcForm,
+    RecipeForm,
+    DailyForm,
+    WeightForm,
+    ReviewForm,
+    PhotoForm,
+    FitnessForm,
+)
 from aiogram.types import BufferedInputFile
 
 from app.keyboards import (
@@ -49,6 +57,7 @@ from app.services.database import (
     a_has_standard_access as has_standard_access,
     a_get_user_plan as get_user_plan,
     a_log_growth_event as log_growth_event,
+    a_set_profile_soup_pref as set_profile_soup_pref,
 )
 from app.prompts import MENU_SYSTEM_SOUP, MENU_SYSTEM_NO_SOUP, RECIPE_SYSTEM
 
@@ -198,14 +207,29 @@ def _format_selected_restrictions(selected: list[str]) -> str:
 @router.message(
     CommandStart(),
     StateFilter(
+        CalcForm.gender,
         CalcForm.height,
         CalcForm.weight,
         CalcForm.age,
+        CalcForm.activity,
+        CalcForm.target,
         CalcForm.goal_weight,
+        CalcForm.restrictions,
         CalcForm.restrictions_detail,
+        CalcForm.accelerate,
+        CalcForm.accelerate_level,
+        CalcForm.food_prefs,
         CalcForm.food_prefs_custom,
+        CalcForm.cuisine,
         CalcForm.cuisine_custom,
+        CalcForm.soup_pref,
+        CalcForm.menu_confirm,
         RecipeForm.dish_name,
+        DailyForm.food_log,
+        WeightForm.weight,
+        ReviewForm.text,
+        PhotoForm.waiting,
+        FitnessForm.level,
     ),
 )
 async def restart_from_calc_state(m: Message, state: FSMContext):
@@ -859,6 +883,7 @@ async def _show_kbju(cb: CallbackQuery, state: FSMContext, prefs_summary: str = 
 async def set_soup_pref(cb: CallbackQuery, state: FSMContext):
     wants_soup = cb.data.split(":")[1] == "yes"
     await state.update_data(wants_soup=wants_soup)
+    await set_profile_soup_pref(cb.from_user.id, wants_soup)
 
     label = "🥣 С супами" if wants_soup else "🚫 Без супов"
     await cb.message.edit_text(

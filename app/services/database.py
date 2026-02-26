@@ -514,6 +514,15 @@ def has_premium_access(user_id: int) -> bool:
     return PLAN_LEVEL.get(get_user_plan(user_id), 0) >= 2
 
 
+def set_profile_soup_pref(user_id: int, soup_pref: bool):
+    conn = _conn()
+    conn.execute(
+        "UPDATE profiles SET soup_pref = ?, updated_at = ? WHERE user_id = ?",
+        (int(bool(soup_pref)), datetime.now().isoformat(), user_id),
+    )
+    conn.close()
+
+
 # ── Full history for export ───────────────────────────────────────
 
 def get_full_daily_history(user_id: int) -> list[dict]:
@@ -956,6 +965,9 @@ async def a_has_standard_access(user_id):
 
 async def a_has_premium_access(user_id):
     return await arun(has_premium_access, user_id)
+
+async def a_set_profile_soup_pref(user_id, soup_pref):
+    return await arun(set_profile_soup_pref, user_id, soup_pref)
 
 async def a_get_full_daily_history(user_id):
     return await arun(get_full_daily_history, user_id)

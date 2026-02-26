@@ -241,7 +241,7 @@ async def show_stats(m: Message):
     await m.answer(text, parse_mode="HTML")
 
 
-@router.message(Command("growth"))
+@router.message(F.text.regexp(r"^/growth(@\w+)?$"))
 async def show_growth(m: Message):
     if not await _can_use_growth(m.from_user.id):
         await m.answer("⛔ Эта команда доступна только администратору.")
@@ -278,12 +278,6 @@ async def show_growth(m: Message):
         f"download_click: {c.get('download_click', 0)}\n"
     )
     await m.answer(text, parse_mode="HTML")
-
-
-@router.message(F.text.regexp(r"^/growth(@\w+)?$"))
-async def show_growth_fallback(m: Message):
-    # Fallback for cases when Telegram sends command as plain text variant.
-    await show_growth(m)
 
 
 @router.message(Command("reactivate_d1"))
