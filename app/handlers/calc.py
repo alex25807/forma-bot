@@ -1,8 +1,10 @@
 import logging
 
 from aiogram import Router, F
+from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from aiogram.filters import StateFilter
 
 from app.states import CalcForm, RecipeForm
 from aiogram.types import BufferedInputFile
@@ -192,6 +194,36 @@ def _format_selected_restrictions(selected: list[str]) -> str:
 
 
 # ── Отмена ────────────────────────────────────────────────────────
+
+@router.message(
+    CommandStart(),
+    StateFilter(
+        CalcForm.height,
+        CalcForm.weight,
+        CalcForm.age,
+        CalcForm.goal_weight,
+        CalcForm.restrictions_detail,
+        CalcForm.food_prefs_custom,
+        CalcForm.cuisine_custom,
+        RecipeForm.dish_name,
+    ),
+)
+async def restart_from_calc_state(m: Message, state: FSMContext):
+    """Make /start always recover from interrupted calc/recipe text states."""
+    await state.clear()
+    await m.answer(
+        "Предыдущий ввод сброшен ✅\n"
+        "Возвращаю в главное меню.",
+    )
+    await m.answer(
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "       <b>F O R M A</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Выберите действие 👇",
+        parse_mode="HTML",
+        reply_markup=await _kb(m.from_user.id),
+    )
+
 
 @router.callback_query(F.data == "calc:cancel")
 async def cancel(cb: CallbackQuery, state: FSMContext):
