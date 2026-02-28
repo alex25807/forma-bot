@@ -218,7 +218,7 @@ def _pref_rows(selected: list[str]):
         # row 4: drinks
         [("coffee", "☕ Кофе"), ("tea", "🍵 Чай"), ("compot", "🧃 Сок")],
         # row 5: dairy
-        [("kefir", "🥛 Кефир"), ("tvorog", "🧀 Творог"), ("milk", "🥛 Молоко")],
+        [("kefir", "🥛 Кефир"), ("tvorog", "🥣 Творог"), ("milk", "🥛 Молоко")],
     ]
     rows = []
     for group in all_items:

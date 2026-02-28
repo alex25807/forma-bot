@@ -232,6 +232,34 @@ def _format_selected_restrictions(selected: list[str]) -> str:
         FitnessForm.level,
     ),
 )
+@router.message(
+    F.text == "🏠 Старт",
+    StateFilter(
+        CalcForm.gender,
+        CalcForm.height,
+        CalcForm.weight,
+        CalcForm.age,
+        CalcForm.activity,
+        CalcForm.target,
+        CalcForm.goal_weight,
+        CalcForm.restrictions,
+        CalcForm.restrictions_detail,
+        CalcForm.accelerate,
+        CalcForm.accelerate_level,
+        CalcForm.food_prefs,
+        CalcForm.food_prefs_custom,
+        CalcForm.cuisine,
+        CalcForm.cuisine_custom,
+        CalcForm.soup_pref,
+        CalcForm.menu_confirm,
+        RecipeForm.dish_name,
+        DailyForm.food_log,
+        WeightForm.weight,
+        ReviewForm.text,
+        PhotoForm.waiting,
+        FitnessForm.level,
+    ),
+)
 async def restart_from_calc_state(m: Message, state: FSMContext):
     """Make /start always recover from interrupted calc/recipe text states."""
     await state.clear()

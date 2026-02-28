@@ -560,9 +560,10 @@ def get_start_date(user_id: int) -> str | None:
     weight = conn.execute("SELECT MIN(logged_at) FROM weight_log WHERE user_id = ?", (user_id,)).fetchone()
     conn.close()
 
-    dates = []
     if sub and sub[0]:
-        dates.append(sub[0][:10])
+        return sub[0][:10]
+
+    dates = []
     if profile and profile[0]:
         dates.append(profile[0][:10])
     if daily and daily[0]:
