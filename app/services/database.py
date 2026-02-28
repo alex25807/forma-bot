@@ -548,17 +548,29 @@ def get_full_weight_history(user_id: int) -> list[dict]:
 
 
 def get_start_date(user_id: int) -> str | None:
-    """Return the date when the user first interacted (profile creation or first daily log)."""
+    """
+    Return the earliest meaningful start date for progress tracking.
+    Priority source is subscriber join date; fallbacks are first activity records.
+    """
     conn = _conn()
+    sub = conn.execute("SELECT joined_at FROM subscribers WHERE user_id = ?", (user_id,)).fetchone()
     profile = conn.execute("SELECT updated_at FROM profiles WHERE user_id = ?", (user_id,)).fetchone()
     daily = conn.execute("SELECT MIN(log_date) FROM daily_log WHERE user_id = ?", (user_id,)).fetchone()
+    menu = conn.execute("SELECT MIN(created_at) FROM menu_log WHERE user_id = ?", (user_id,)).fetchone()
+    weight = conn.execute("SELECT MIN(logged_at) FROM weight_log WHERE user_id = ?", (user_id,)).fetchone()
     conn.close()
 
     dates = []
+    if sub and sub[0]:
+        dates.append(sub[0][:10])
     if profile and profile[0]:
         dates.append(profile[0][:10])
     if daily and daily[0]:
         dates.append(daily[0])
+    if menu and menu[0]:
+        dates.append(menu[0][:10])
+    if weight and weight[0]:
+        dates.append(weight[0][:10])
     return min(dates) if dates else None
 
 
