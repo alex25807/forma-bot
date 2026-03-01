@@ -35,6 +35,7 @@ from app.services.database import (
     a_get_start_date as get_start_date,
     a_has_standard_access as has_standard_access,
     a_get_user_plan as get_user_plan,
+    a_is_newbie_mode as is_newbie_mode,
     a_days_since_last_menu as days_since_last_menu,
 )
 from app.services.charts import generate_weight_chart
@@ -63,7 +64,8 @@ async def _kb(user_id: int):
         and days is not None
         and days >= MENU_PERIOD
     )
-    return kb_start(sub, has_profile, can_renew, plan=plan)
+    newbie = await is_newbie_mode(user_id)
+    return kb_start(sub, has_profile, can_renew, plan=plan, newbie_mode=newbie)
 
 
 # ── Возврат в меню ────────────────────────────────────────────────
@@ -86,6 +88,16 @@ async def back_to_menu(cb: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "main:support")
 async def morning(cb: CallbackQuery):
+    profile = await get_profile(cb.from_user.id)
+    if not profile:
+        await cb.message.edit_text(
+            "Сначала сделаем базу 👇\n\n"
+            "Нажмите «📊 Рассчитать ориентир»,\n"
+            "чтобы я смог давать персональные чек-ины.",
+            reply_markup=await _kb(cb.from_user.id),
+        )
+        await cb.answer()
+        return
     await cb.message.edit_text(
         texts.MORNING_PROMPT,
         reply_markup=kb_morning_state(),
@@ -106,6 +118,16 @@ async def morning_state(cb: CallbackQuery):
 
 @router.callback_query(F.data == "main:review")
 async def evening(cb: CallbackQuery):
+    profile = await get_profile(cb.from_user.id)
+    if not profile:
+        await cb.message.edit_text(
+            "Разбор дня работает после настройки профиля.\n\n"
+            "Нажмите «📊 Рассчитать ориентир»,\n"
+            "и я включу персональный вечерний разбор.",
+            reply_markup=await _kb(cb.from_user.id),
+        )
+        await cb.answer()
+        return
     await cb.message.edit_text(
         texts.EVENING_PROMPT,
         reply_markup=kb_evening_summary(),

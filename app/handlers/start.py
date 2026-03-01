@@ -12,6 +12,7 @@ from app.services.database import (
     a_has_consent as has_consent,
     a_save_consent as save_consent,
     a_get_user_plan as get_user_plan,
+    a_is_newbie_mode as is_newbie_mode,
     a_log_growth_event as log_growth_event,
 )
 
@@ -32,7 +33,8 @@ async def _kb(user_id: int):
         and days is not None
         and days >= MENU_PERIOD
     )
-    return kb_start(sub, has_profile, can_renew, plan=plan)
+    newbie = await is_newbie_mode(user_id)
+    return kb_start(sub, has_profile, can_renew, plan=plan, newbie_mode=newbie)
 
 
 WELCOME_TEXT = (
@@ -42,6 +44,12 @@ WELCOME_TEXT = (
     "Спокойный сервис по питанию.\n"
     "Помогает изменить форму тела\n"
     "без крайностей и чувства вины.\n\n"
+    "<b>С чего начать:</b>\n"
+    "1) Нажмите «📊 Рассчитать ориентир»\n"
+    "2) Получите меню на 3 дня\n"
+    "3) Отмечайтесь утром и вечером\n\n"
+    "Если хотите готовый маршрут —\n"
+    "нажмите «🎯 Мини-челлендж 3 дня».\n\n"
     "Выберите действие 👇"
 )
 
@@ -234,7 +242,14 @@ async def subscribe(cb: CallbackQuery):
     plan = await get_user_plan(cb.from_user.id)
     days = await days_since_last_menu(cb.from_user.id)
     can_renew = has_profile and days is not None and days >= MENU_PERIOD
-    kb = kb_start(subscribed=True, has_profile=has_profile, can_renew=can_renew, plan=plan)
+    newbie = await is_newbie_mode(cb.from_user.id)
+    kb = kb_start(
+        subscribed=True,
+        has_profile=has_profile,
+        can_renew=can_renew,
+        plan=plan,
+        newbie_mode=newbie,
+    )
 
     if is_new:
         await cb.message.edit_text("✨ Оформляем подписку...")

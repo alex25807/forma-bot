@@ -43,3 +43,7 @@ class PhotoForm(StatesGroup):
 
 class FitnessForm(StatesGroup):
     level = State()
+
+
+class ChallengeForm(StatesGroup):
+    final_feedback = State()

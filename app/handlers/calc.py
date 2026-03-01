@@ -14,6 +14,7 @@ from app.states import (
     ReviewForm,
     PhotoForm,
     FitnessForm,
+    ChallengeForm,
 )
 from aiogram.types import BufferedInputFile
 
@@ -56,6 +57,7 @@ from app.services.database import (
     a_get_last_menu as get_last_menu,
     a_has_standard_access as has_standard_access,
     a_get_user_plan as get_user_plan,
+    a_is_newbie_mode as is_newbie_mode,
     a_log_growth_event as log_growth_event,
     a_set_profile_soup_pref as set_profile_soup_pref,
 )
@@ -80,7 +82,8 @@ async def _kb(user_id: int):
         and days is not None
         and days >= MENU_PERIOD
     )
-    return kb_start(sub, has_profile, can_renew, plan=plan)
+    newbie = await is_newbie_mode(user_id)
+    return kb_start(sub, has_profile, can_renew, plan=plan, newbie_mode=newbie)
 
 GENDER_LABEL = {"male": "мужской", "female": "женский"}
 ACTIVITY_LABEL = {
@@ -230,6 +233,7 @@ def _format_selected_restrictions(selected: list[str]) -> str:
         ReviewForm.text,
         PhotoForm.waiting,
         FitnessForm.level,
+        ChallengeForm.final_feedback,
     ),
 )
 @router.message(
@@ -258,6 +262,7 @@ def _format_selected_restrictions(selected: list[str]) -> str:
         ReviewForm.text,
         PhotoForm.waiting,
         FitnessForm.level,
+        ChallengeForm.final_feedback,
     ),
 )
 async def restart_from_calc_state(m: Message, state: FSMContext):

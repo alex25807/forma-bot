@@ -14,23 +14,27 @@ def kb_start(
     has_profile: bool = False,
     can_renew: bool = False,
     plan: str = "free",
+    newbie_mode: bool = False,
 ):
     rows = [
-        [InlineKeyboardButton(text="ℹ️ Как это работает", callback_data="main:info")],
-        [InlineKeyboardButton(text="💬 Поддержка сегодня", callback_data="main:support")],
-        [InlineKeyboardButton(text="📝 Разобрать день", callback_data="main:review")],
         [InlineKeyboardButton(text="📊 Рассчитать ориентир", callback_data="main:calc")],
+        [InlineKeyboardButton(text="🎯 Мини-челлендж 3 дня", callback_data="main:challenge")],
+        [InlineKeyboardButton(text="ℹ️ Как это работает", callback_data="main:info")],
     ]
-    if can_renew:
+    if has_profile:
+        rows.append([InlineKeyboardButton(text="☀️ Утренний чек-ин", callback_data="main:support")])
+        rows.append([InlineKeyboardButton(text="🌙 Вечерний чек-ин", callback_data="main:review")])
+    if can_renew and not newbie_mode:
         rows.append([InlineKeyboardButton(text="🔄 Обновить меню на 3 дня", callback_data="main:renew_menu")])
     if has_profile:
         rows.append([
             InlineKeyboardButton(text="📈 Мой прогресс", callback_data="main:progress"),
             InlineKeyboardButton(text="⚖️ Обновить вес", callback_data="main:weight"),
         ])
-    if plan == "premium":
+    if plan == "premium" and not newbie_mode:
         rows.append([InlineKeyboardButton(text="📷 Анализ фото еды", callback_data="main:photo")])
-    rows.append([InlineKeyboardButton(text="✍️ Отзыв", callback_data="main:review_send")])
+    if not newbie_mode:
+        rows.append([InlineKeyboardButton(text="✍️ Отзыв", callback_data="main:review_send")])
     if plan in ("standard", "premium"):
         label = "Стандарт" if plan == "standard" else "Премиум"
         rows.append([InlineKeyboardButton(text=f"✅ {label}", callback_data="main:subscribed_info")])

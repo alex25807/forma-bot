@@ -20,6 +20,7 @@ from app.services.database import (
     a_has_standard_access as has_standard_access,
     a_is_subscribed as is_subscribed,
     a_get_user_plan as get_user_plan,
+    a_is_newbie_mode as is_newbie_mode,
     a_days_since_last_menu as days_since_last_menu,
 )
 from app.prompts import FITNESS_SYSTEM
@@ -60,7 +61,8 @@ async def _kb(user_id: int):
         and days is not None
         and days >= MENU_PERIOD
     )
-    return kb_start(sub, has_profile, can_renew, plan=plan)
+    newbie = await is_newbie_mode(user_id)
+    return kb_start(sub, has_profile, can_renew, plan=plan, newbie_mode=newbie)
 
 
 @router.callback_query(F.data == "main:fitness_locked")

@@ -151,6 +151,14 @@ def init_db():
             meta         TEXT,
             created_at   TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS challenge_state (
+            user_id      INTEGER PRIMARY KEY,
+            step         TEXT NOT NULL,
+            active       INTEGER NOT NULL DEFAULT 1,
+            started_at   TEXT NOT NULL,
+            updated_at   TEXT NOT NULL
+        );
     """)
     # Migrations
     for col, typ in [
@@ -575,6 +583,24 @@ def get_start_date(user_id: int) -> str | None:
     return min(dates) if dates else None
 
 
+def is_newbie_mode(user_id: int) -> bool:
+    """
+    Lightweight simplified-UI mode for first 3 days.
+    Turns off once user completes the 3-day challenge.
+    """
+    ch = get_challenge_state(user_id)
+    if ch and ch.get("step") == "completed":
+        return False
+    start = get_start_date(user_id)
+    if not start:
+        return True
+    try:
+        days = (date.today() - date.fromisoformat(start)).days
+    except Exception:
+        return False
+    return days < 3
+
+
 # ── Reviews ──────────────────────────────────────────────────────
 
 def save_review(user_id: int, username: str | None, first_name: str | None, text: str):
@@ -782,7 +808,8 @@ def delete_user_data(user_id: int):
     conn = _conn()
     for table in ("profiles", "weight_log", "daily_log", "menu_log",
                   "subscribers", "subscriptions", "whitelist", "reviews",
-                  "consent", "api_usage", "fitness_log", "growth_events"):
+                  "consent", "api_usage", "fitness_log", "growth_events",
+                  "challenge_state"):
         conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
     conn.close()
 
@@ -895,6 +922,44 @@ def get_d1_reactivation_candidates(limit: int = 200) -> list[int]:
     return result
 
 
+# ── Challenge state ────────────────────────────────────────────────
+
+def set_challenge_step(user_id: int, step: str, active: bool = True):
+    now = datetime.now().isoformat()
+    conn = _conn()
+    conn.execute(
+        """
+        INSERT INTO challenge_state (user_id, step, active, started_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            step=excluded.step,
+            active=excluded.active,
+            updated_at=excluded.updated_at
+        """,
+        (user_id, step, int(active), now, now),
+    )
+    conn.close()
+
+
+def get_challenge_state(user_id: int) -> dict | None:
+    conn = _conn()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT * FROM challenge_state WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+    d = dict(row)
+    d["active"] = bool(d.get("active", 0))
+    return d
+
+
+def reset_challenge(user_id: int):
+    set_challenge_step(user_id, "d1_morning", active=True)
+
+
 # ── Init on import ────────────────────────────────────────────────
 
 init_db()
@@ -991,6 +1056,10 @@ async def a_get_full_weight_history(user_id):
 async def a_get_start_date(user_id):
     return await arun(get_start_date, user_id)
 
+
+async def a_is_newbie_mode(user_id):
+    return await arun(is_newbie_mode, user_id)
+
 async def a_save_review(user_id, username, first_name, text):
     return await arun(save_review, user_id, username, first_name, text)
 
@@ -1044,3 +1113,15 @@ async def a_get_growth_funnel(days=7):
 
 async def a_get_d1_reactivation_candidates(limit=200):
     return await arun(get_d1_reactivation_candidates, limit)
+
+
+async def a_set_challenge_step(user_id, step, active=True):
+    return await arun(set_challenge_step, user_id, step, active)
+
+
+async def a_get_challenge_state(user_id):
+    return await arun(get_challenge_state, user_id)
+
+
+async def a_reset_challenge(user_id):
+    return await arun(reset_challenge, user_id)
