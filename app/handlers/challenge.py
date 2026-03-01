@@ -11,6 +11,7 @@ from app.services.database import (
     a_get_profile as get_profile,
     a_get_user_plan as get_user_plan,
     a_days_since_last_menu as days_since_last_menu,
+    a_get_menu_count as get_menu_count,
     a_is_newbie_mode as is_newbie_mode,
     a_has_standard_access as has_standard_access,
     a_has_premium_access as has_premium_access,
@@ -41,6 +42,10 @@ async def _kb(user_id: int):
     return kb_start(sub, has_profile, can_renew, plan=plan, newbie_mode=newbie)
 
 
+async def _has_menu(uid: int) -> bool:
+    return (await get_menu_count(uid)) > 0
+
+
 def _step_kb(step: str, uid: int, standard: bool = False, premium: bool = False):
     if step == "d1_morning":
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -48,15 +53,21 @@ def _step_kb(step: str, uid: int, standard: bool = False, premium: bool = False)
             [InlineKeyboardButton(text="👀 Посмотреть, что умеет FORMA", callback_data="main:info")],
             [InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")],
         ])
+    if step == "d1_menu_pending":
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Рассчитать ориентир и получить меню", callback_data="main:calc")],
+            [InlineKeyboardButton(text="✅ День 1 по меню пройден", callback_data="ch:d1:menu_done")],
+            [InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")],
+        ])
     if step == "d1_evening":
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🌙 Пройти вечерний чек-ин", callback_data="ch:d1e:start")],
             [InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")],
         ])
-    if step == "d2_morning":
+    if step == "d2_menu_pending":
         rows = [
             [InlineKeyboardButton(text="⚖️ Обновить вес", callback_data="main:weight")],
-            [InlineKeyboardButton(text="✅ Утро D2 отмечено", callback_data="ch:d2m:done")],
+            [InlineKeyboardButton(text="✅ День 2 по меню пройден", callback_data="ch:d2:menu_done")],
         ]
         if standard:
             rows.append([InlineKeyboardButton(text="🏃 Показать упражнения", callback_data="main:fitness")])
@@ -67,13 +78,13 @@ def _step_kb(step: str, uid: int, standard: bool = False, premium: bool = False)
             [InlineKeyboardButton(text="🌙 Пройти вечерний чек-ин", callback_data="ch:d2e:start")],
             [InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")],
         ])
-    if step == "d3_morning":
+    if step == "d3_menu_pending":
         rows = [
             [InlineKeyboardButton(text="⚖️ Обновить вес", callback_data="main:weight")],
         ]
         if premium:
             rows.append([InlineKeyboardButton(text="📷 Отправить фото еды", callback_data="main:photo")])
-        rows.append([InlineKeyboardButton(text="✅ Утро D3 отмечено", callback_data="ch:d3m:done")])
+        rows.append([InlineKeyboardButton(text="✅ День 3 по меню пройден", callback_data="ch:d3:menu_done")])
         rows.append([InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")])
         return InlineKeyboardMarkup(inline_keyboard=rows)
     if step == "d3_evening":
@@ -103,18 +114,27 @@ async def _render_step(msg: Message, uid: int, step: str, edit: bool = True):
             "• сможешь отметить стартовый вес\n\n"
             "Достаточно быть чуть лучше, чем вчера."
         )
+    elif step == "d1_menu_pending":
+        text = (
+            "📋 <b>День 1 / выполнение по меню</b>\n\n"
+            "Сначала получите меню на 3 дня,\n"
+            "затем пройдите первый день по этому меню.\n\n"
+            "После этого нажмите кнопку\n"
+            "«✅ День 1 по меню пройден»."
+        )
     elif step == "d1_evening":
         text = (
             "🌙 <b>День 1 / вечер</b>\n\n"
             "Подведём итог первого дня.\n"
             "Короткий честный чек-ин даст понятный фокус на завтра."
         )
-    elif step == "d2_morning":
+    elif step == "d2_menu_pending":
         text = (
-            "🌞 <b>День 2 / утро</b>\n\n"
-            "Отлично, продолжаем.\n"
-            "Взвесься и отправь вес, чтобы обновить динамику.\n"
-            "Затем отметь утро D2 и двигаемся дальше."
+            "🌞 <b>День 2 / выполнение по меню</b>\n\n"
+            "Продолжайте следовать меню второй день.\n"
+            "Можно обновить вес для контроля динамики.\n\n"
+            "Когда день пройден — нажмите\n"
+            "«✅ День 2 по меню пройден»."
         )
         if standard:
             text += "\n\nУ тебя доступен фитнес-модуль 5-10 минут — можно подключить сегодня."
@@ -124,11 +144,11 @@ async def _render_step(msg: Message, uid: int, step: str, edit: bool = True):
             "Сделаем короткий разбор:\n"
             "что было проще/сложнее и где главный барьер."
         )
-    elif step == "d3_morning":
+    elif step == "d3_menu_pending":
         text = (
-            "🎯 <b>День 3 / утро</b>\n\n"
+            "🎯 <b>День 3 / выполнение по меню</b>\n\n"
             "Финальный день челленджа.\n"
-            "Обнови вес и закрепи ритм: план, вода, спокойный режим."
+            "Пройдите третий день по меню и закрепите ритм."
         )
         if premium:
             text += "\n\nМожно отправить фото еды — получишь оценку КБЖУ по фото."
@@ -169,6 +189,13 @@ async def open_challenge(cb: CallbackQuery):
         step = "d1_morning"
     else:
         step = state.get("step", "d1_morning")
+    # Backward compatibility with earlier step names.
+    if step == "d2_morning":
+        step = "d2_menu_pending"
+        await set_challenge_step(cb.from_user.id, step, active=True)
+    elif step == "d3_morning":
+        step = "d3_menu_pending"
+        await set_challenge_step(cb.from_user.id, step, active=True)
     await _render_step(cb.message, cb.from_user.id, step, edit=True)
     await cb.answer()
 
@@ -183,7 +210,7 @@ async def restart_challenge(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ch:d1:go")
 async def d1_go(cb: CallbackQuery, state: FSMContext):
-    await set_challenge_step(cb.from_user.id, "d1_evening", active=True)
+    await set_challenge_step(cb.from_user.id, "d1_menu_pending", active=True)
     await log_growth_event(cb.from_user.id, "challenge_d1_morning_done")
     await state.set_state(CalcForm.gender)
     await cb.message.edit_text(
@@ -193,6 +220,17 @@ async def d1_go(cb: CallbackQuery, state: FSMContext):
         parse_mode="HTML",
         reply_markup=kb_gender(),
     )
+    await cb.answer()
+
+
+@router.callback_query(F.data == "ch:d1:menu_done")
+async def d1_menu_done(cb: CallbackQuery):
+    if not await _has_menu(cb.from_user.id):
+        await cb.answer("Сначала получите меню на 3 дня 📋", show_alert=True)
+        return
+    await set_challenge_step(cb.from_user.id, "d1_evening", active=True)
+    await log_growth_event(cb.from_user.id, "challenge_d1_menu_day_done")
+    await _render_step(cb.message, cb.from_user.id, "d1_evening", edit=True)
     await cb.answer()
 
 
@@ -272,7 +310,7 @@ async def d1_evening_finish(cb: CallbackQuery):
     else:
         focus = "повторить текущий ритм и закрепить его"
 
-    await set_challenge_step(cb.from_user.id, "d2_morning", active=True)
+    await set_challenge_step(cb.from_user.id, "d2_menu_pending", active=True)
     await log_growth_event(
         cb.from_user.id,
         "challenge_d1_evening_done",
@@ -282,22 +320,25 @@ async def d1_evening_finish(cb: CallbackQuery):
         "Класс, спасибо за честность 🙌\n\n"
         f"Что уже хорошо: {strengths[0]}, {strengths[1]}.\n"
         f"Фокус на завтра: {focus}.\n\n"
-        "Переходим к Дню 2 утром.",
+        "Вы готовы идти со мной дальше?",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Ок, идём дальше", callback_data="main:challenge")],
-            [InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")],
+            [InlineKeyboardButton(text="✅ Да, идём в День 2", callback_data="main:challenge")],
+            [InlineKeyboardButton(text="⏸️ Сделаю паузу", callback_data="back:menu")],
         ]),
     )
     await cb.answer()
 
 
-@router.callback_query(F.data == "ch:d2m:done")
-async def d2_morning_done(cb: CallbackQuery):
+@router.callback_query(F.data == "ch:d2:menu_done")
+async def d2_menu_done(cb: CallbackQuery):
+    if not await _has_menu(cb.from_user.id):
+        await cb.answer("Сначала получите меню на 3 дня 📋", show_alert=True)
+        return
     await set_challenge_step(cb.from_user.id, "d2_evening", active=True)
-    await log_growth_event(cb.from_user.id, "challenge_d2_morning_done")
+    await log_growth_event(cb.from_user.id, "challenge_d2_menu_day_done")
     await cb.message.edit_text(
-        "✅ Утро Дня 2 отмечено.\n"
-        "К вечеру сделаем короткий разбор и перейдём к Дню 3.",
+        "✅ День 2 по меню отмечен.\n"
+        "Открывайте вечерний разбор и перейдём к Дню 3.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Открыть вечер D2", callback_data="main:challenge")],
             [InlineKeyboardButton(text="↩️ В меню", callback_data="back:menu")],
@@ -352,7 +393,7 @@ async def d2_evening_finish(cb: CallbackQuery):
         "habit": "держи под рукой альтернативу перекусам",
         "none": "сохрани тот же режим ещё один день",
     }[reason]
-    await set_challenge_step(cb.from_user.id, "d3_morning", active=True)
+    await set_challenge_step(cb.from_user.id, "d3_menu_pending", active=True)
     await log_growth_event(
         cb.from_user.id,
         "challenge_d2_evening_done",
@@ -371,12 +412,15 @@ async def d2_evening_finish(cb: CallbackQuery):
     await cb.answer()
 
 
-@router.callback_query(F.data == "ch:d3m:done")
-async def d3_morning_done(cb: CallbackQuery):
+@router.callback_query(F.data == "ch:d3:menu_done")
+async def d3_menu_done(cb: CallbackQuery):
+    if not await _has_menu(cb.from_user.id):
+        await cb.answer("Сначала получите меню на 3 дня 📋", show_alert=True)
+        return
     await set_challenge_step(cb.from_user.id, "d3_evening", active=True)
-    await log_growth_event(cb.from_user.id, "challenge_d3_morning_done")
+    await log_growth_event(cb.from_user.id, "challenge_d3_menu_day_done")
     await cb.message.edit_text(
-        "✅ Утро Дня 3 отмечено.\n"
+        "✅ День 3 по меню отмечен.\n"
         "Вечером закроем челлендж и выберем удобный формат продолжения.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Открыть финал", callback_data="main:challenge")],
@@ -384,6 +428,17 @@ async def d3_morning_done(cb: CallbackQuery):
         ]),
     )
     await cb.answer()
+
+
+# Legacy callbacks (kept for users with older inline messages in history)
+@router.callback_query(F.data == "ch:d2m:done")
+async def d2_morning_done_legacy(cb: CallbackQuery):
+    await d2_menu_done(cb)
+
+
+@router.callback_query(F.data == "ch:d3m:done")
+async def d3_morning_done_legacy(cb: CallbackQuery):
+    await d3_menu_done(cb)
 
 
 @router.callback_query(F.data == "ch:d3e:start")

@@ -324,12 +324,15 @@ def kb_after_menu(
     has_standard_access: bool = False,
     show_fitness: bool = False,
     fitness_locked: bool = False,
+    show_challenge_continue: bool = False,
 ):
     """Keyboard shown right after menu generation."""
     rows = [
+        [InlineKeyboardButton(text="🎯 Продолжить челлендж", callback_data="main:challenge")] if show_challenge_continue else None,
         [InlineKeyboardButton(text="👨‍🍳 Получить рецепт", callback_data="menu:recipe")],
         [InlineKeyboardButton(text="📝 Разобрать день", callback_data="main:review")],
     ]
+    rows = [r for r in rows if r is not None]
     if show_fitness:
         rows.append([InlineKeyboardButton(text="🏃 Упражнения на сегодня", callback_data="main:fitness")])
     elif fitness_locked:

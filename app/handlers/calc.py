@@ -60,6 +60,7 @@ from app.services.database import (
     a_is_newbie_mode as is_newbie_mode,
     a_log_growth_event as log_growth_event,
     a_set_profile_soup_pref as set_profile_soup_pref,
+    a_get_challenge_state as get_challenge_state,
 )
 from app.prompts import MENU_SYSTEM_SOUP, MENU_SYSTEM_NO_SOUP, RECIPE_SYSTEM
 
@@ -1015,10 +1016,17 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
 
     standard = await has_standard_access(cb.from_user.id)
     is_low_activity = data.get("activity") in ("sedentary", "light")
+    challenge = await get_challenge_state(cb.from_user.id)
+    show_challenge_continue = bool(
+        challenge
+        and challenge.get("active")
+        and challenge.get("step") != "completed"
+    )
     kb = kb_after_menu(
         has_standard_access=standard,
         show_fitness=standard and is_low_activity,
         fitness_locked=(not standard) and is_low_activity,
+        show_challenge_continue=show_challenge_continue,
     )
     if len(menu_text) <= 4096:
         await cb.message.answer(menu_text)
@@ -1027,6 +1035,11 @@ async def generate_menu(cb: CallbackQuery, state: FSMContext):
         for chunk in chunks:
             await cb.message.answer(chunk)
     await cb.message.answer("✅ Меню готово. Что дальше?", reply_markup=kb)
+    if show_challenge_continue:
+        await cb.message.answer(
+            "🎯 Следующий шаг челленджа уже готов.\n"
+            "Нажмите «Продолжить челлендж».",
+        )
     if not standard:
         await cb.message.answer(
             "💡 Хотите больше гибкости?\n"
@@ -1213,10 +1226,17 @@ async def renew_menu(cb: CallbackQuery):
     full_text = header + menu_text
     standard = await has_standard_access(uid)
     is_low_activity = profile.get("activity") in ("sedentary", "light")
+    challenge = await get_challenge_state(uid)
+    show_challenge_continue = bool(
+        challenge
+        and challenge.get("active")
+        and challenge.get("step") != "completed"
+    )
     kb = kb_after_menu(
         has_standard_access=standard,
         show_fitness=standard and is_low_activity,
         fitness_locked=(not standard) and is_low_activity,
+        show_challenge_continue=show_challenge_continue,
     )
 
     if len(full_text) <= 4096:
@@ -1227,6 +1247,10 @@ async def renew_menu(cb: CallbackQuery):
             pm = "HTML" if i == 0 else None
             await cb.message.answer(chunk, parse_mode=pm)
     await cb.message.answer("✅ Новое меню готово. Что дальше?", reply_markup=kb)
+    if show_challenge_continue:
+        await cb.message.answer(
+            "🎯 Чтобы идти по шагам, нажмите «Продолжить челлендж».",
+        )
 
 
 # ── Скачать меню ─────────────────────────────────────────────────
