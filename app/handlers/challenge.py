@@ -1,5 +1,7 @@
 """D1-D3 onboarding challenge flow with soft upsell."""
 
+from datetime import datetime
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -11,7 +13,7 @@ from app.services.database import (
     a_get_profile as get_profile,
     a_get_user_plan as get_user_plan,
     a_days_since_last_menu as days_since_last_menu,
-    a_get_menu_count as get_menu_count,
+    a_get_last_menu as get_last_menu,
     a_is_newbie_mode as is_newbie_mode,
     a_has_standard_access as has_standard_access,
     a_has_premium_access as has_premium_access,
@@ -42,8 +44,35 @@ async def _kb(user_id: int):
     return kb_start(sub, has_profile, can_renew, plan=plan, newbie_mode=newbie)
 
 
-async def _has_menu(uid: int) -> bool:
-    return (await get_menu_count(uid)) > 0
+async def _has_fresh_menu_since(uid: int, since_iso: str | None) -> bool:
+    """Check menu exists and was generated after current day-step started."""
+    last = await get_last_menu(uid)
+    if not last:
+        return False
+    if not since_iso:
+        return True
+    try:
+        return datetime.fromisoformat(last["created_at"]) >= datetime.fromisoformat(since_iso)
+    except Exception:
+        return True
+
+
+async def _require_step(cb: CallbackQuery, expected_step: str) -> dict | None:
+    """Guard against out-of-order clicks from old/forwarded messages."""
+    st = await get_challenge_state(cb.from_user.id)
+    if not st or not st.get("active"):
+        await cb.answer(
+            "Откройте «🎯 Мини-челлендж 3 дня», чтобы продолжить.",
+            show_alert=True,
+        )
+        return None
+    if st.get("step") != expected_step:
+        await cb.answer(
+            "Сначала завершите текущий шаг челленджа.",
+            show_alert=True,
+        )
+        return None
+    return st
 
 
 def _step_kb(step: str, uid: int, standard: bool = False, premium: bool = False):
@@ -225,8 +254,11 @@ async def d1_go(cb: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "ch:d1:menu_done")
 async def d1_menu_done(cb: CallbackQuery):
-    if not await _has_menu(cb.from_user.id):
-        await cb.answer("Сначала получите меню на 3 дня 📋", show_alert=True)
+    st = await _require_step(cb, "d1_menu_pending")
+    if not st:
+        return
+    if not await _has_fresh_menu_since(cb.from_user.id, st.get("updated_at")):
+        await cb.answer("Сначала получите меню на 3 дня для текущего шага 📋", show_alert=True)
         return
     await set_challenge_step(cb.from_user.id, "d1_evening", active=True)
     await log_growth_event(cb.from_user.id, "challenge_d1_menu_day_done")
@@ -236,6 +268,9 @@ async def d1_menu_done(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ch:d1e:start")
 async def d1_evening_start(cb: CallbackQuery):
+    st = await _require_step(cb, "d1_evening")
+    if not st:
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="😊 8-10", callback_data="ch:d1e:s:high"),
@@ -254,6 +289,9 @@ async def d1_evening_start(cb: CallbackQuery):
 
 @router.callback_query(F.data.startswith("ch:d1e:s:"))
 async def d1_evening_score(cb: CallbackQuery):
+    st = await _require_step(cb, "d1_evening")
+    if not st:
+        return
     score = cb.data.rsplit(":", 1)[-1]
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -270,6 +308,9 @@ async def d1_evening_score(cb: CallbackQuery):
 
 @router.callback_query(F.data.startswith("ch:d1e:n:"))
 async def d1_evening_snacks(cb: CallbackQuery):
+    st = await _require_step(cb, "d1_evening")
+    if not st:
+        return
     _, _, _, score, snacks = cb.data.split(":")
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -286,6 +327,9 @@ async def d1_evening_snacks(cb: CallbackQuery):
 
 @router.callback_query(F.data.startswith("ch:d1e:w:"))
 async def d1_evening_finish(cb: CallbackQuery):
+    st = await _require_step(cb, "d1_evening")
+    if not st:
+        return
     _, _, _, score, snacks, water = cb.data.split(":")
     strengths = []
     if score == "high":
@@ -331,8 +375,11 @@ async def d1_evening_finish(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ch:d2:menu_done")
 async def d2_menu_done(cb: CallbackQuery):
-    if not await _has_menu(cb.from_user.id):
-        await cb.answer("Сначала получите меню на 3 дня 📋", show_alert=True)
+    st = await _require_step(cb, "d2_menu_pending")
+    if not st:
+        return
+    if not await _has_fresh_menu_since(cb.from_user.id, st.get("updated_at")):
+        await cb.answer("Сначала получите меню на 3 дня для текущего шага 📋", show_alert=True)
         return
     await set_challenge_step(cb.from_user.id, "d2_evening", active=True)
     await log_growth_event(cb.from_user.id, "challenge_d2_menu_day_done")
@@ -349,6 +396,9 @@ async def d2_menu_done(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ch:d2e:start")
 async def d2_evening_start(cb: CallbackQuery):
+    st = await _require_step(cb, "d2_evening")
+    if not st:
+        return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Проще", callback_data="ch:d2e:d:easy")],
         [InlineKeyboardButton(text="Так же", callback_data="ch:d2e:d:same")],
@@ -363,6 +413,9 @@ async def d2_evening_start(cb: CallbackQuery):
 
 @router.callback_query(F.data.startswith("ch:d2e:d:"))
 async def d2_evening_diff(cb: CallbackQuery):
+    st = await _require_step(cb, "d2_evening")
+    if not st:
+        return
     diff = cb.data.rsplit(":", 1)[-1]
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Стресс", callback_data=f"ch:d2e:r:{diff}:stress")],
@@ -379,6 +432,9 @@ async def d2_evening_diff(cb: CallbackQuery):
 
 @router.callback_query(F.data.startswith("ch:d2e:r:"))
 async def d2_evening_finish(cb: CallbackQuery):
+    st = await _require_step(cb, "d2_evening")
+    if not st:
+        return
     _, _, _, diff, reason = cb.data.split(":")
     diff_txt = {"easy": "стало проще", "same": "уровень нагрузки стабильный", "hard": "день был сложнее"}
     reason_txt = {
@@ -414,8 +470,11 @@ async def d2_evening_finish(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ch:d3:menu_done")
 async def d3_menu_done(cb: CallbackQuery):
-    if not await _has_menu(cb.from_user.id):
-        await cb.answer("Сначала получите меню на 3 дня 📋", show_alert=True)
+    st = await _require_step(cb, "d3_menu_pending")
+    if not st:
+        return
+    if not await _has_fresh_menu_since(cb.from_user.id, st.get("updated_at")):
+        await cb.answer("Сначала получите меню на 3 дня для текущего шага 📋", show_alert=True)
         return
     await set_challenge_step(cb.from_user.id, "d3_evening", active=True)
     await log_growth_event(cb.from_user.id, "challenge_d3_menu_day_done")
@@ -443,6 +502,9 @@ async def d3_morning_done_legacy(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ch:d3e:start")
 async def d3_evening_start(cb: CallbackQuery, state: FSMContext):
+    st = await _require_step(cb, "d3_evening")
+    if not st:
+        return
     await state.set_state(ChallengeForm.final_feedback)
     await cb.message.edit_text(
         "Напиши в двух словах, что больше всего помогло за эти 3 дня.",
@@ -455,6 +517,14 @@ async def d3_evening_start(cb: CallbackQuery, state: FSMContext):
 
 @router.message(ChallengeForm.final_feedback)
 async def d3_final_feedback(m: Message, state: FSMContext):
+    ch = await get_challenge_state(m.from_user.id)
+    if not ch or ch.get("step") != "d3_evening":
+        await state.clear()
+        await m.answer(
+            "Откройте «🎯 Мини-челлендж 3 дня», чтобы продолжить по шагам.",
+            reply_markup=await _kb(m.from_user.id),
+        )
+        return
     feedback = (m.text or "").strip()
     if not feedback:
         await m.answer("Напиши коротко 2-6 слов, что было полезнее всего.")
