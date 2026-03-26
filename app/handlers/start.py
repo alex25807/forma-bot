@@ -41,9 +41,10 @@ WELCOME_TEXT = (
     "━━━━━━━━━━━━━━━━━━━━━\n"
     "       <b>F O R M A</b>\n"
     "━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "Спокойный сервис по питанию.\n"
-    "Помогает изменить форму тела\n"
-    "без крайностей и чувства вины.\n\n"
+    "Благожелательный, ненавязчивый сервис\n"
+    "по управлению формой тела.\n"
+    "Без жёстких диет, без срывов,\n"
+    "без чувства вины.\n\n"
     "<b>Воспользовавшись сервисом, Вы получите:</b>\n"
     "• ориентир КБЖУ под Ваши параметры — без догадок\n"
     "• меню с возможностью выбора предпочитаемой кухни\n"
@@ -126,11 +127,17 @@ async def start(m: Message):
     if not await has_consent(m.from_user.id):
         await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
         return
-    await add_subscriber(m.from_user.id, m.from_user.username, m.from_user.first_name)
+    is_new = await add_subscriber(m.from_user.id, m.from_user.username, m.from_user.first_name)
+    if is_new:
+        # Show the quick-start button only once (first entry), then never again.
+        await m.answer("Выберите действие 👇", reply_markup=kb_quick_start())
+    else:
+        # Force-remove stale old reply keyboards/hints in existing chats.
+        await m.answer("Обновляю интерфейс…", reply_markup=remove_kb)
     await m.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
 
 
-@router.message(F.text == "🏠 Старт")
+@router.message(F.text.in_({"↩️ Возврат в главное меню", "🏠 Старт"}))
 async def quick_start(m: Message):
     await log_growth_event(m.from_user.id, "start", {"source": "quick_button"})
     if not await has_consent(m.from_user.id):
@@ -152,11 +159,7 @@ async def accept_consent(cb: CallbackQuery):
     await save_consent(cb.from_user.id)
     await add_subscriber(cb.from_user.id, cb.from_user.username, cb.from_user.first_name)
     await cb.message.edit_text("✅ Спасибо! Согласие принято.")
-    await cb.message.answer(
-        "Для быстрого возврата в главное меню можно нажать «🏠 Старт» снизу.\n"
-        "Эта кнопка появится один раз и исчезнет после использования.",
-        reply_markup=kb_quick_start(),
-    )
+    await cb.message.answer("Обновляю интерфейс…", reply_markup=remove_kb)
     await cb.message.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
 
