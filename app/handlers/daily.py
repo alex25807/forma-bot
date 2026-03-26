@@ -13,6 +13,8 @@ from app.keyboards import (
     kb_evening_summary,
     kb_deviation_reason,
     kb_progress,
+    kb_photo_camera,
+    remove_kb,
 )
 from app.states import DailyForm, WeightForm, ReviewForm
 from app import texts
@@ -491,6 +493,9 @@ async def ask_photo(cb: CallbackQuery, state: FSMContext):
     await state.set_state(PhotoForm.waiting)
     await cb.message.answer(
         "📷 <b>Анализ фото еды</b>\n\n"
+        "Нажмите кнопку с фотоаппаратом снизу и сделайте снимок блюда.\n"
+        "Или отправьте готовое фото из галереи.\n\n"
+        "Можно добавить подпись: например «это ужин».\n\n"
         "Отправьте фото того, что вы едите\n"
         "или планируете съесть.\n\n"
         "AI оценит блюда и подсчитает\n"
@@ -498,6 +503,7 @@ async def ask_photo(cb: CallbackQuery, state: FSMContext):
         "<i>Поддерживаются фото блюд,\n"
         "тарелок, продуктов</i>",
         parse_mode="HTML",
+        reply_markup=kb_photo_camera(),
     )
     await cb.answer()
 
@@ -509,7 +515,7 @@ from app.states import PhotoForm          # noqa: E402
 async def analyze_photo(m: Message, state: FSMContext):
     uid = m.from_user.id
     await state.clear()
-    wait_msg = await m.answer("🔍 Анализирую фото...")
+    wait_msg = await m.answer("🔍 Анализирую фото...", reply_markup=remove_kb)
 
     from app.bot import bot
     photo = m.photo[-1]
