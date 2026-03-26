@@ -15,7 +15,7 @@ CONSENT_TEXT = (
     "Для продолжения необходимо\n"
     "принять условия обработки\n"
     "персональных данных.\n\n"
-    "Нажмите /start"
+    "Нажмите «✅ Принимаю» ниже"
 )
 
 ALLOWED_CALLBACKS = {"consent:accept", "consent:policy"}
@@ -47,7 +47,7 @@ class ConsentMiddleware(BaseMiddleware):
 
         if isinstance(event, CallbackQuery):
             await event.answer(
-                "Необходимо принять условия.\nНажмите /start",
+                "Необходимо принять условия.\nНажмите «✅ Принимаю»",
                 show_alert=True,
             )
             return

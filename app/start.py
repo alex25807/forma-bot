@@ -7,13 +7,12 @@ from app.services.database import (
     a_add_subscriber as add_subscriber,
     a_is_subscribed as is_subscribed,
     a_get_profile as get_profile,
+    a_is_whitelisted as is_whitelisted,
     a_get_menu_count as get_menu_count,
     a_days_since_last_menu as days_since_last_menu,
     a_has_consent as has_consent,
     a_save_consent as save_consent,
     a_get_user_plan as get_user_plan,
-    a_is_newbie_mode as is_newbie_mode,
-    a_log_growth_event as log_growth_event,
 )
 
 router = Router()
@@ -33,8 +32,7 @@ async def _kb(user_id: int):
         and days is not None
         and days >= MENU_PERIOD
     )
-    newbie = await is_newbie_mode(user_id)
-    return kb_start(sub, has_profile, can_renew, plan=plan, newbie_mode=newbie)
+    return kb_start(sub, has_profile, can_renew, plan=plan)
 
 
 WELCOME_TEXT = (
@@ -49,15 +47,9 @@ WELCOME_TEXT = (
     "• меню с возможностью выбора предпочитаемой кухни\n"
     "  и точными граммовками\n"
     "• учёт здоровья, ограничений и Ваших предпочтений\n"
-    "• поддержку каждый день: утром — курс, вечером — разбор\n"
+    "• поддержка каждый день: утром — курс, вечером — разбор\n"
     "• трекер прогресса: вес, графики и короткая статистика\n"
     "• быстрые ответы «что поесть» — чтобы держать ритм\n\n"
-    "<b>С чего начать:</b>\n"
-    "1) Нажмите «📊 Рассчитать ориентир»\n"
-    "2) Получите меню с выбранной кухней\n"
-    "3) Отмечайтесь утром и вечером\n\n"
-    "Если хотите готовый маршрут —\n"
-    "нажмите «🎯 Мини-челлендж 3 дня».\n\n"
     "Выберите действие 👇"
 )
 
@@ -122,24 +114,25 @@ PRIVACY_POLICY = (
 
 @router.message(CommandStart())
 async def start(m: Message):
-    await log_growth_event(m.from_user.id, "start", {"source": "command"})
     if not await has_consent(m.from_user.id):
         await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
         return
-    is_new = await add_subscriber(m.from_user.id, m.from_user.username, m.from_user.first_name)
+    # Show the quick-start button only once (first entry), then never again.
+    try:
+        from app.services.database import a_add_subscriber as add_subscriber  # local import to avoid cycles
+        is_new = await add_subscriber(m.from_user.id, m.from_user.username, m.from_user.first_name)
+    except Exception:
+        is_new = False
     if is_new:
-        # Show the quick-start button only once (first entry), then never again.
         await m.answer("Выберите действие 👇", reply_markup=kb_quick_start())
     await m.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
 
 
 @router.message(F.text == "🏠 Старт")
 async def quick_start(m: Message):
-    await log_growth_event(m.from_user.id, "start", {"source": "quick_button"})
     if not await has_consent(m.from_user.id):
         await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
         return
-    await add_subscriber(m.from_user.id, m.from_user.username, m.from_user.first_name)
     await m.answer("Открываю главное меню…", reply_markup=remove_kb)
     await m.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
 
@@ -153,7 +146,6 @@ async def show_policy(cb: CallbackQuery):
 @router.callback_query(F.data == "consent:accept")
 async def accept_consent(cb: CallbackQuery):
     await save_consent(cb.from_user.id)
-    await add_subscriber(cb.from_user.id, cb.from_user.username, cb.from_user.first_name)
     await cb.message.edit_text("✅ Спасибо! Согласие принято.")
     await cb.message.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
@@ -161,7 +153,6 @@ async def accept_consent(cb: CallbackQuery):
 
 @router.callback_query(F.data == "main:info")
 async def how_it_works(cb: CallbackQuery):
-    await log_growth_event(cb.from_user.id, "info_open")
     text = (
         "📌 <b>Как работает FORMA</b>\n\n"
         "  📊  Рассчитываем ваш ориентир\n"
@@ -214,14 +205,6 @@ async def how_it_works(cb: CallbackQuery):
         "  ✅ Персональные рекомендации\n"
         "  ✅ Приоритетная поддержка\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 <b>Почему это выгодно</b>\n\n"
-        "FORMA по цене относится к доступному сегменту,\n"
-        "а по набору функций — к уровню верхних тарифов:\n"
-        "меню, рецепты, трекер прогресса и фото-анализ.\n\n"
-        "По цене одной тренировки в зале\n"
-        "или 2-3 доставок еды в месяц\n"
-        "вы получаете полноценного AI-нутрициолога.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
         "💡 <b>Уровни активности</b>\n\n"
         "  🚶 <b>Лёгкая</b> — прогулки 2-3 р/нед,\n"
         "        лёгкая работа по дому\n\n"
@@ -254,14 +237,7 @@ async def subscribe(cb: CallbackQuery):
     plan = await get_user_plan(cb.from_user.id)
     days = await days_since_last_menu(cb.from_user.id)
     can_renew = has_profile and days is not None and days >= MENU_PERIOD
-    newbie = await is_newbie_mode(cb.from_user.id)
-    kb = kb_start(
-        subscribed=True,
-        has_profile=has_profile,
-        can_renew=can_renew,
-        plan=plan,
-        newbie_mode=newbie,
-    )
+    kb = kb_start(subscribed=True, has_profile=has_profile, can_renew=can_renew, plan=plan)
 
     if is_new:
         await cb.message.edit_text("✨ Оформляем подписку...")
@@ -319,15 +295,9 @@ async def subscribed_info(cb: CallbackQuery):
         "  💬  Ежедневное сопровождение\n"
         "  ⚖️  Отслеживание прогресса\n"
         "  🎯  Путь до вашего результата\n\n"
-        "🎁 <b>Дополнительно:</b>\n"
-        "в рамках акций/челленджей FORMA\n"
-        "может открываться временный доступ\n"
-        "к отдельным расширенным функциям.\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "<i>Для оформления напишите нам —\n"
         "подберём удобный вариант.</i>"
     )
     await cb.message.edit_text(text, parse_mode="HTML", reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
-
-
