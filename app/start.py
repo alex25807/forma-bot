@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 
-from app.keyboards import kb_start, kb_consent, kb_quick_start
+from app.keyboards import kb_start, kb_consent, kb_quick_start, remove_kb
 from app.services.database import (
     a_add_subscriber as add_subscriber,
     a_is_subscribed as is_subscribed,
@@ -42,6 +42,14 @@ WELCOME_TEXT = (
     "Спокойный сервис по питанию.\n"
     "Помогает изменить форму тела\n"
     "без крайностей и чувства вины.\n\n"
+    "<b>Воспользовавшись сервисом, Вы получите:</b>\n"
+    "• ориентир КБЖУ под Ваши параметры — без догадок\n"
+    "• меню с возможностью выбора предпочитаемой кухни\n"
+    "  и точными граммовками\n"
+    "• учёт здоровья, ограничений и Ваших предпочтений\n"
+    "• поддержка каждый день: утром — курс, вечером — разбор\n"
+    "• трекер прогресса: вес, графики и короткая статистика\n"
+    "• быстрые ответы «что поесть» — чтобы держать ритм\n\n"
     "Выберите действие 👇"
 )
 
@@ -107,10 +115,8 @@ PRIVACY_POLICY = (
 @router.message(CommandStart())
 async def start(m: Message):
     if not await has_consent(m.from_user.id):
-        await m.answer("⬇️ Быстрый доступ к меню включён.", reply_markup=kb_quick_start())
         await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
         return
-    await m.answer("⬇️ Кнопка «🏠 Старт» доступна внизу.", reply_markup=kb_quick_start())
     await m.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
 
 
@@ -119,6 +125,7 @@ async def quick_start(m: Message):
     if not await has_consent(m.from_user.id):
         await m.answer(CONSENT_TEXT, parse_mode="HTML", reply_markup=kb_consent())
         return
+    await m.answer("Открываю главное меню…", reply_markup=remove_kb)
     await m.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(m.from_user.id))
 
 
@@ -132,7 +139,11 @@ async def show_policy(cb: CallbackQuery):
 async def accept_consent(cb: CallbackQuery):
     await save_consent(cb.from_user.id)
     await cb.message.edit_text("✅ Спасибо! Согласие принято.")
-    await cb.message.answer("⬇️ Кнопка «🏠 Старт» доступна внизу.", reply_markup=kb_quick_start())
+    await cb.message.answer(
+        "Для быстрого возврата в главное меню можно нажать «🏠 Старт» снизу.\n"
+        "Эта кнопка появится один раз и исчезнет после использования.",
+        reply_markup=kb_quick_start(),
+    )
     await cb.message.answer(WELCOME_TEXT, parse_mode="HTML", reply_markup=await _kb(cb.from_user.id))
     await cb.answer()
 

@@ -6,7 +6,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery, Update
 
 from app.services.database import a_has_consent as has_consent
-from app.keyboards import kb_consent, kb_quick_start
+from app.keyboards import kb_consent
 
 CONSENT_TEXT = (
     "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -52,7 +52,6 @@ class ConsentMiddleware(BaseMiddleware):
             )
             return
         elif isinstance(event, Message):
-            await event.answer("⬇️ Кнопка «🏠 Старт» доступна внизу.", reply_markup=kb_quick_start())
             await event.answer(
                 CONSENT_TEXT,
                 parse_mode="HTML",

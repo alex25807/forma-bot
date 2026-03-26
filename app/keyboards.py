@@ -47,11 +47,11 @@ def kb_start(
 
 
 def kb_quick_start():
-    """Persistent one-tap launcher shown in the input area."""
+    """One-tap launcher shown in the input area (one-time)."""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="🏠 Старт")]],
         resize_keyboard=True,
-        is_persistent=True,
+        one_time_keyboard=True,
         input_field_placeholder="Нажмите «🏠 Старт» для главного меню",
     )
 
@@ -63,6 +63,16 @@ def kb_consent():
         [InlineKeyboardButton(text="📄 Политика конфиденциальности", callback_data="consent:policy")],
         [InlineKeyboardButton(text="✅ Принимаю", callback_data="consent:accept")],
     ])
+
+
+def kb_photo_camera():
+    """Shows a camera button in the input area to send a photo."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📷 Сделать фото блюда", request_photo=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+        input_field_placeholder="Сфотографируйте блюдо для оценки КБЖУ",
+    )
 
 
 # ── Утреннее состояние ────────────────────────────────────────────
@@ -176,7 +186,7 @@ def kb_restrictions_done():
         [InlineKeyboardButton(text="🥛 Непереносимость лактозы", callback_data="restr:lactose")],
         [InlineKeyboardButton(text="🌾 Без глютена", callback_data="restr:gluten")],
         [InlineKeyboardButton(text="✏️ Другое (напишу)", callback_data="restr:custom")],
-        [InlineKeyboardButton(text="➡️ Готово, продолжить", callback_data="restr:done")],
+        [InlineKeyboardButton(text="✅ ГОТОВО", callback_data="restr:done")],
     ])
 
 
@@ -245,7 +255,7 @@ def kb_food_prefs(selected: list[str] | None = None):
 def kb_food_prefs_done(selected: list[str]):
     rows = _pref_rows(selected)
     rows.append([InlineKeyboardButton(text="✏️ Другое (напишу)", callback_data="pref:custom")])
-    rows.append([InlineKeyboardButton(text="➡️ Готово, продолжить", callback_data="pref:done")])
+    rows.append([InlineKeyboardButton(text="✅ ГОТОВО", callback_data="pref:done")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -279,7 +289,7 @@ def kb_cuisine_done(selected: list[str]):
         mark = "✅ " if key in selected else ""
         rows.append([InlineKeyboardButton(text=f"{mark}{label}", callback_data=f"cuisine:{key}")])
     rows.append([InlineKeyboardButton(text="✏️ Другое (напишу)", callback_data="cuisine:custom")])
-    rows.append([InlineKeyboardButton(text="➡️ Готово, продолжить", callback_data="cuisine:done")])
+    rows.append([InlineKeyboardButton(text="✅ ГОТОВО", callback_data="cuisine:done")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
