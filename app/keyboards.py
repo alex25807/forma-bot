@@ -49,10 +49,10 @@ def kb_start(
 def kb_quick_start():
     """One-tap launcher shown in the input area (one-time)."""
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="🏠 Старт")]],
+        keyboard=[[KeyboardButton(text="↩️ Возврат в главное меню")]],
         resize_keyboard=True,
         one_time_keyboard=True,
-        input_field_placeholder="Нажмите «🏠 Старт» для главного меню",
+        input_field_placeholder="Нажмите «↩️ Возврат в главное меню»",
     )
 
 

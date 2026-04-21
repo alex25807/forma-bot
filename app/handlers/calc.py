@@ -238,7 +238,7 @@ def _format_selected_restrictions(selected: list[str]) -> str:
     ),
 )
 @router.message(
-    F.text == "🏠 Старт",
+    F.text.in_({"↩️ Возврат в главное меню", "🏠 Старт"}),
     StateFilter(
         CalcForm.gender,
         CalcForm.height,

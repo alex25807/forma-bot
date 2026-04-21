@@ -176,7 +176,7 @@ async def process_payment(m: Message):
         f"🎉 <b>Подписка «{plan_label}» активирована!</b>\n\n"
         f"Действует до: {expires[:10]}\n\n"
         "Спасибо, что выбрали FORMA!\n"
-        "Нажмите /start для главного меню",
+        "Вернитесь в главное меню и выберите действие 👇",
         parse_mode="HTML",
     )
     logger.info(

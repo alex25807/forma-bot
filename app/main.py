@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from aiohttp import web
+from aiogram.exceptions import TelegramNetworkError
 
 from app.bot import bot, dp
 
@@ -32,6 +33,16 @@ async def run_health_server():
 async def main():
     logger.info("Starting bot in polling mode...")
     await run_health_server()
+    try:
+        me = await bot.get_me()
+        logger.info("Telegram OK, logged in as @%s (id=%s)", me.username, me.id)
+    except TelegramNetworkError as e:
+        logger.error(
+            "Не удаётся подключиться к api.telegram.org (%s). "
+            "Проверьте интернет, файрвол, VPN (в РФ Telegram API часто блокируется), DNS.",
+            e,
+        )
+        raise SystemExit(1) from e
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, handle_signals=False)
 

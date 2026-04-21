@@ -193,7 +193,7 @@ async def redeem_vip_code(m: Message):
         "  ✅  Безлимитные меню\n"
         "  ✅  Графики и экспорт\n"
         "  ✅  Полное сопровождение\n\n"
-        "Нажмите /start чтобы начать 👇",
+        "Вернитесь в главное меню и выберите действие 👇",
         parse_mode="HTML",
     )
     logger.info("VIP code redeemed by user %s (%s)", uid, m.from_user.first_name)
@@ -296,7 +296,7 @@ async def reactivate_d1(m: Message):
     text = (
         "👋 Небольшое напоминание от FORMA\n\n"
         "Если хотите — продолжим мягко и без стресса.\n"
-        "Нажмите «🏠 Старт» и я подскажу следующий шаг."
+        "Нажмите «↩️ Возврат в главное меню» и я подскажу следующий шаг."
     )
     for uid in uids:
         try:
@@ -385,7 +385,7 @@ async def confirm_delete(cb: CallbackQuery):
     await cb.message.edit_text(
         "✅ Все ваши данные удалены.\n\n"
         "Спасибо, что пользовались FORMA.\n"
-        "Если захотите вернуться — нажмите /start",
+        "Если захотите вернуться — просто откройте главное меню и выберите действие 👇",
     )
     await cb.answer()
     logger.info("User %s requested data deletion", cb.from_user.id)
