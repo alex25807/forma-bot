@@ -2,9 +2,15 @@ import asyncio
 import logging
 import os
 from aiohttp import web
-from aiogram.exceptions import TelegramNetworkError
+from aiogram.exceptions import (
+    TelegramAPIError,
+    TelegramConflictError,
+    TelegramNetworkError,
+    TelegramUnauthorizedError,
+)
 
 from app.bot import bot, dp
+from app.config import settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,16 +38,37 @@ async def run_health_server():
 
 async def main():
     logger.info("Starting bot in polling mode...")
+    if not (settings.BOT_TOKEN or "").strip():
+        logger.error(
+            "BOT_TOKEN пустой. Задайте переменную BOT_TOKEN в Railway (Variables) или в .env."
+        )
+        raise SystemExit(1)
     await run_health_server()
     try:
         me = await bot.get_me()
         logger.info("Telegram OK, logged in as @%s (id=%s)", me.username, me.id)
+    except TelegramUnauthorizedError as e:
+        logger.error(
+            "Telegram отклонил токен (неверный или отозван BOT_TOKEN). Проверьте значение в Railway. %s",
+            e,
+        )
+        raise SystemExit(1) from e
+    except TelegramConflictError as e:
+        logger.error(
+            "Конфликт: уже запущен другой процесс long polling с этим BOT_TOKEN "
+            "(второй Railway-сервис, локальный запуск или webhook). Остановите лишний. %s",
+            e,
+        )
+        raise SystemExit(1) from e
     except TelegramNetworkError as e:
         logger.error(
             "Не удаётся подключиться к api.telegram.org (%s). "
             "Проверьте интернет, файрвол, VPN (в РФ Telegram API часто блокируется), DNS.",
             e,
         )
+        raise SystemExit(1) from e
+    except TelegramAPIError as e:
+        logger.error("Ошибка Telegram API при getMe: %s", e)
         raise SystemExit(1) from e
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, handle_signals=False)
